@@ -1,40 +1,45 @@
 # User Story Mapping Tool
 
-A monorepo-based user story mapping tool built with NestJS and TypeScript.
+A modular monorepo for user story mapping, built with NestJS and TypeScript.
 
 ## Project Structure
 
 ```
-.
-├── CLAUDE.md                          # Backend development guide
-├── docs/                              # Documentation
-│   ├── DATA_MODEL_QUICK_REFERENCE.md
-│   ├── DATA_MODEL_VISUAL_SUMMARY.md
-│   └── DATA_MODEL_COMPREHENSIVE.md
-├── packages/
-│   ├── common/                        # Shared utilities and types
-│   │   ├── src/
-│   │   │   ├── config/               # Configuration utilities
-│   │   │   ├── decorators/           # Custom decorators
-│   │   │   ├── filters/              # Exception filters
-│   │   │   ├── guards/               # Guards
-│   │   │   ├── interceptors/         # Interceptors
-│   │   │   ├── pipes/                # Pipes
-│   │   │   ├── types/                # Shared types and interfaces
-│   │   │   └── utils/                # Utility functions
-│   │   └── package.json
-│   └── user-story/                    # User story mapping service
+user-story-mapping-tool/
+├── apps/
+│   └── backend/                    # NestJS Backend API
 │       ├── src/
-│       │   ├── modules/              # Feature modules
-│       │   ├── shared/               # Shared service code
-│       │   ├── app.module.ts
-│       │   ├── app.controller.ts
-│       │   ├── app.service.ts
-│       │   └── main.ts
-│       ├── test/                     # E2E tests
-│       └── package.json
-└── apps/                             # Future applications (if needed)
+│       │   ├── modules/            # Feature modules
+│       │   │   ├── health/        # Health check module
+│       │   │   └── user-stories/  # User stories module (TODO)
+│       │   ├── common/            # Common utilities
+│       │   │   ├── filters/       # Exception filters
+│       │   │   ├── interceptors/  # HTTP interceptors
+│       │   │   ├── guards/        # Auth guards (future)
+│       │   │   └── pipes/         # Validation pipes (future)
+│       │   ├── shared/            # Shared code
+│       │   │   ├── types/         # TypeScript types
+│       │   │   └── constants/     # App constants
+│       │   ├── config/            # Configuration
+│       │   ├── app.module.ts      # Root module
+│       │   └── main.ts            # Entry point
+│       ├── test/                  # Tests
+│       └── dist/                  # Compiled output
+├── libs/                          # Shared libraries (future)
+├── docs/                          # Documentation
+│   ├── DATA_MODEL_COMPREHENSIVE.md
+│   ├── DATA_MODEL_QUICK_REFERENCE.md
+│   └── DATA_MODEL_VISUAL_SUMMARY.md
+├── CLAUDE.md                      # Backend development guide
+└── package.json                   # Root workspace config
 ```
+
+## Why This Structure?
+
+- **Feature-based modules**: Code organized by domain/feature (NestJS best practice)
+- **Monorepo ready**: Easy to add new apps (worker, admin panel, frontend)
+- **Multi-language support**: Can add apps in other languages (Python ML service, etc.)
+- **MVP-friendly**: Start simple, scale as needed
 
 ## Prerequisites
 
@@ -43,32 +48,25 @@ A monorepo-based user story mapping tool built with NestJS and TypeScript.
 
 ## Getting Started
 
-### 1. Install pnpm (if not already installed)
-
-```bash
-npm install -g pnpm
-```
-
-### 2. Install dependencies
+### 1. Install dependencies
 
 ```bash
 pnpm install
 ```
 
-### 3. Build all packages
+### 2. Build the backend
 
 ```bash
 pnpm build
 ```
 
-### 4. Start development
+### 3. Start the server
 
 ```bash
-# Start all packages in development mode
-pnpm dev
+# Production mode
+pnpm start
 
-# Or start a specific package
-cd packages/user-story
+# Development mode (with watch)
 pnpm dev
 ```
 
@@ -76,90 +74,83 @@ pnpm dev
 
 ### Root Level
 
-- `pnpm install` - Install all dependencies
-- `pnpm build` - Build all packages
-- `pnpm dev` - Start all packages in development mode
-- `pnpm test` - Run tests in all packages
-- `pnpm lint` - Lint all packages
+- `pnpm build` - Build the backend
+- `pnpm start` - Start the backend in production mode
+- `pnpm dev` - Start the backend in development mode with watch
+- `pnpm test` - Run all tests
+- `pnpm lint` - Lint all code
 - `pnpm format` - Format code with Prettier
 - `pnpm clean` - Clean all build artifacts
 
-### Package Level
+### Backend App
 
-Navigate to any package directory (`packages/common` or `packages/user-story`) and run:
-
-- `pnpm build` - Build the package
-- `pnpm dev` - Start in development mode
-- `pnpm test` - Run tests
-- `pnpm lint` - Lint the package
-
-## Packages
-
-### @user-story-mapping/common
-
-Shared utilities, types, and common functionality used across all services.
-
-**Key exports:**
-- Base types and interfaces
-- Exception filters
-- Interceptors
-- Configuration utilities
-- Logger
-
-### @user-story-mapping/user-story
-
-Main user story mapping service built with NestJS.
-
-**Features:**
-- RESTful API
-- Swagger documentation at `/api/docs`
-- Health check endpoint
-- Global validation
-- Exception handling
-
-## Development
-
-### Running the User Story Service
+Navigate to `apps/backend/` or use pnpm filters:
 
 ```bash
-cd packages/user-story
-pnpm dev
+# Build backend
+pnpm --filter @user-story-mapping/backend build
+
+# Start backend
+pnpm --filter @user-story-mapping/backend start
+
+# Run tests
+pnpm --filter @user-story-mapping/backend test
 ```
 
-The service will be available at:
-- API: http://localhost:3000/api
-- Swagger Docs: http://localhost:3000/api/docs
+## API Endpoints
 
-### Adding a New Package
+Once running, the API is available at:
 
-1. Create a new directory under `packages/`
-2. Add a `package.json` with the name `@user-story-mapping/[package-name]`
-3. The package will be automatically picked up by the workspace configuration
+- **Health Check**: `http://localhost:3000/api/health`
+- **Swagger Docs**: `http://localhost:3000/api/docs`
 
-### Environment Variables
+Example health check response:
+```json
+{
+  "status": "ok",
+  "message": "User Story Mapping Service is running",
+  "timestamp": "2025-11-18T23:15:04.705Z"
+}
+```
 
-Create a `.env` file in the root or package directory:
+## Adding New Modules
+
+To add a new feature module:
+
+1. Create a new directory in `apps/backend/src/modules/`
+2. Create `*.module.ts`, `*.controller.ts`, `*.service.ts`
+3. Add the module to `app.module.ts`
+
+Example:
+```bash
+mkdir -p apps/backend/src/modules/my-feature
+# Add your module files
+```
+
+## Adding New Apps
+
+To add a new application (e.g., worker, admin panel):
+
+1. Create a new directory in `apps/`
+2. Add a `package.json` with name `@user-story-mapping/app-name`
+3. pnpm will automatically include it in the workspace
+
+Example for a Python service:
+```bash
+mkdir -p apps/ml-service
+# Add your Python code
+```
+
+## Environment Variables
+
+Create a `.env` file in the root:
 
 ```env
 NODE_ENV=development
 PORT=3000
-API_PREFIX=api
 ```
 
-## Testing
-
-```bash
-# Run all tests
-pnpm test
-
-# Run tests in watch mode
-cd packages/user-story
-pnpm test:watch
-
-# Run e2e tests
-cd packages/user-story
-pnpm test:e2e
-```
+See `.env.example` for all available variables.
 
 ## Documentation
 
@@ -170,12 +161,17 @@ pnpm test:e2e
 
 ## Tech Stack
 
-- **Framework:** NestJS
-- **Language:** TypeScript
+- **Framework:** NestJS 10.x
+- **Language:** TypeScript 5.x
 - **Package Manager:** pnpm
-- **Monorepo Tool:** pnpm workspaces
-- **Documentation:** Swagger/OpenAPI
+- **Monorepo:** pnpm workspaces
+- **API Documentation:** Swagger/OpenAPI
 - **Testing:** Jest
+- **Future:** PostgreSQL (Supabase) + Prisma ORM
+
+## Contributing
+
+This is an MVP project. Follow the module-based structure and NestJS conventions.
 
 ## License
 

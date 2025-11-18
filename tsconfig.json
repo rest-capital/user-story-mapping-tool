@@ -6,9 +6,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "rootDir": "./",
-    "composite": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
@@ -29,14 +26,7 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "baseUrl": ".",
-    "paths": {
-      "@user-story-mapping/common": ["packages/common/src"],
-      "@user-story-mapping/common/*": ["packages/common/src/*"],
-      "@user-story-mapping/user-story": ["packages/user-story/src"],
-      "@user-story-mapping/user-story/*": ["packages/user-story/src/*"]
-    }
+    "moduleResolution": "node"
   },
   "exclude": ["node_modules", "dist", "build"]
 }
