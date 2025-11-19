@@ -12,6 +12,7 @@ import { StoriesModule } from './modules/stories/stories.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { PersonasModule } from './modules/personas/personas.module';
 import { CommentsModule } from './modules/comments/comments.module';
+import { StoryLinksModule } from './modules/story-links/story-links.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CommentsModule } from './modules/comments/comments.module';
     TagsModule,
     PersonasModule,
     CommentsModule,
+    StoryLinksModule,
     UserStoriesModule,
   ],
 })

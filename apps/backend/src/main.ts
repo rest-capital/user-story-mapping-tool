@@ -41,6 +41,7 @@ async function bootstrap() {
     .addTag('tags')
     .addTag('personas')
     .addTag('comments')
+    .addTag('story-links')
     .addTag('user-stories')
     .build();
   const document = SwaggerModule.createDocument(app, config);
