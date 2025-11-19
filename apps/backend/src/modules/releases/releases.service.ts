@@ -1,0 +1,243 @@
+import { Injectable } from '@nestjs/common';
+import { BaseService } from '../../common/base.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { ReleaseError } from './errors/release.error';
+import { CreateReleaseDto } from './dto/create-release.dto';
+import { UpdateReleaseDto } from './dto/update-release.dto';
+import { ReleaseResponseDto } from './dto/release-response.dto';
+
+@Injectable()
+export class ReleasesService extends BaseService {
+  constructor(prisma: PrismaService) {
+    super(prisma);
+  }
+
+  /**
+   * Define how to create domain errors
+   */
+  protected createDomainError(
+    message: string,
+    cause?: Error,
+    context?: any,
+  ): Error {
+    return new ReleaseError(message, cause, context);
+  }
+
+  /**
+   * Get all releases
+   */
+  async findAll(): Promise<ReleaseResponseDto[]> {
+    return this.executeOperation(
+      async () => {
+        const releases = await this.prisma.release.findMany({
+          orderBy: { sortOrder: 'asc' },
+        });
+
+        return releases.map((release) => this.toResponseDto(release));
+      },
+      'findAllReleases',
+      {},
+    );
+  }
+
+  /**
+   * Get a single release by ID
+   */
+  async findOne(id: string): Promise<ReleaseResponseDto> {
+    this.validateRequired(id, 'id', 'Release');
+
+    return this.executeOperation(
+      async () => {
+        const release = await this.prisma.release.findUnique({
+          where: { id },
+        });
+
+        if (!release) {
+          throw new ReleaseError('Release not found');
+        }
+
+        return this.toResponseDto(release);
+      },
+      'findOneRelease',
+      { releaseId: id },
+    );
+  }
+
+  /**
+   * Create a new release
+   * Calculates next sort order automatically
+   */
+  async create(
+    createDto: CreateReleaseDto,
+    userId: string,
+  ): Promise<ReleaseResponseDto> {
+    this.validateRequired(createDto.name, 'name', 'Release');
+    this.validateRequired(userId, 'userId');
+
+    return this.executeOperation(
+      async () => {
+        // Calculate next sort order (0-based for normal releases)
+        let sortOrder = createDto.sort_order ?? 0;
+
+        if (sortOrder === undefined || sortOrder === null) {
+          const existingReleases = await this.prisma.release.count();
+          sortOrder = existingReleases; // 0-based
+        }
+
+        // Create release - map snake_case API DTO to camelCase Prisma
+        const release = await this.prisma.release.create({
+          data: {
+            name: createDto.name,
+            description: createDto.description || '',
+            startDate: createDto.start_date
+              ? new Date(createDto.start_date)
+              : null,
+            dueDate: createDto.due_date ? new Date(createDto.due_date) : null,
+            shipped: createDto.shipped ?? false,
+            isUnassigned: false, // Never allow creating Unassigned via API
+            sortOrder,
+            createdBy: userId,
+          },
+        });
+
+        return this.toResponseDto(release);
+      },
+      'createRelease',
+      { name: createDto.name, userId },
+    );
+  }
+
+  /**
+   * Update a release
+   * CRITICAL: Uses conditional assignment (no spread operator)
+   * CRITICAL: Cannot update isUnassigned field (business rule)
+   */
+  async update(
+    id: string,
+    updateDto: UpdateReleaseDto,
+    userId: string,
+  ): Promise<ReleaseResponseDto> {
+    this.validateRequired(id, 'id', 'Release');
+    this.validateRequired(userId, 'userId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify release exists
+        const existing = await this.prisma.release.findUnique({
+          where: { id },
+        });
+
+        if (!existing) {
+          throw new ReleaseError('Release not found');
+        }
+
+        // CRITICAL: Use conditional assignment to avoid undefined overwrites
+        // Map snake_case DTO to camelCase Prisma
+        const updateData: any = { updatedBy: userId };
+        if (updateDto.name !== undefined) updateData.name = updateDto.name;
+        if (updateDto.description !== undefined)
+          updateData.description = updateDto.description;
+        if (updateDto.start_date !== undefined)
+          updateData.startDate = updateDto.start_date
+            ? new Date(updateDto.start_date)
+            : null;
+        if (updateDto.due_date !== undefined)
+          updateData.dueDate = updateDto.due_date
+            ? new Date(updateDto.due_date)
+            : null;
+        if (updateDto.shipped !== undefined)
+          updateData.shipped = updateDto.shipped;
+        if (updateDto.sort_order !== undefined)
+          updateData.sortOrder = updateDto.sort_order;
+
+        // NEVER allow updating isUnassigned (enforced here)
+
+        const release = await this.prisma.release.update({
+          where: { id },
+          data: updateData,
+        });
+
+        return this.toResponseDto(release);
+      },
+      'updateRelease',
+      { releaseId: id, updates: Object.keys(updateDto), userId },
+    );
+  }
+
+  /**
+   * Delete a release
+   * CRITICAL: Cannot delete Unassigned release (business rule)
+   * CRITICAL: Moves all stories to Unassigned FIRST (uses transaction)
+   */
+  async remove(id: string): Promise<{ success: boolean; stories_moved: number }> {
+    this.validateRequired(id, 'id', 'Release');
+
+    return this.executeInTransaction(
+      async (tx) => {
+        // Verify release exists
+        const release = await tx.release.findUnique({
+          where: { id },
+        });
+
+        if (!release) {
+          throw new ReleaseError('Release not found');
+        }
+
+        // CRITICAL: Cannot delete Unassigned release
+        if (release.isUnassigned) {
+          throw new ReleaseError('Cannot delete the Unassigned release');
+        }
+
+        // CRITICAL: Find the Unassigned release to move stories to
+        const unassignedRelease = await tx.release.findFirst({
+          where: { isUnassigned: true },
+        });
+
+        if (!unassignedRelease) {
+          throw new ReleaseError(
+            'Unassigned release not found - cannot safely delete release',
+          );
+        }
+
+        // CRITICAL: Move all stories to Unassigned FIRST
+        const result = await tx.story.updateMany({
+          where: { releaseId: id },
+          data: { releaseId: unassignedRelease.id },
+        });
+
+        // Now safe to delete the release
+        await tx.release.delete({
+          where: { id },
+        });
+
+        return {
+          success: true,
+          stories_moved: result.count,
+        };
+      },
+      'deleteRelease',
+      { releaseId: id },
+    );
+  }
+
+  /**
+   * Transform Prisma Release to Response DTO
+   * Maps camelCase Prisma fields to snake_case API fields
+   */
+  private toResponseDto(release: any): ReleaseResponseDto {
+    return {
+      id: release.id,
+      name: release.name,
+      description: release.description,
+      start_date: release.startDate,
+      due_date: release.dueDate,
+      shipped: release.shipped,
+      is_unassigned: release.isUnassigned,
+      sort_order: release.sortOrder,
+      created_at: release.createdAt,
+      updated_at: release.updatedAt,
+      created_by: release.createdBy,
+      updated_by: release.updatedBy,
+    };
+  }
+}

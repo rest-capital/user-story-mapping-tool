@@ -8,13 +8,730 @@
 
 ## 🎯 Backend Tech Stack
 
-- **Framework**: Express.js with TypeScript (or NestJS if preferred)
-- **API**: REST endpoints (simple and straightforward)
+- **Framework**: NestJS with TypeScript
+- **API**: REST endpoints with OpenAPI/Swagger
+- **API Documentation**: Scalar (modern Swagger UI alternative)
 - **Database**: PostgreSQL hosted on Supabase, accessed via Prisma ORM
 - **Auth**: Supabase Auth (JWT validation)
 - **Real-time**: WebSocket support for collaborative features (future)
 
 **Note**: Supabase provides both the PostgreSQL database hosting AND authentication. Your backend connects to Supabase's PostgreSQL using Prisma, and verifies JWTs issued by Supabase Auth.
+
+---
+
+## 🏛️ NestJS Architecture Best Practices
+
+### **CRITICAL**: Feature-Based Module Organization
+
+Organize code by **domain/feature**, NOT by technical layer (MVC).
+
+```
+apps/backend/src/
+├── modules/               # Feature modules (domain-driven)
+│   ├── health/           # Health check module
+│   ├── user-stories/     # User stories domain
+│   ├── story-maps/       # Story maps domain
+│   └── auth/             # Authentication domain
+├── common/               # Cross-cutting concerns
+│   ├── filters/         # Exception filters
+│   ├── interceptors/    # HTTP interceptors
+│   ├── guards/          # Auth guards
+│   └── pipes/           # Validation pipes
+├── shared/              # Shared code
+│   ├── types/          # Shared TypeScript types
+│   └── constants/      # App constants
+└── config/             # Configuration
+```
+
+### Feature Module Structure
+
+Each module contains its complete domain logic:
+
+```
+modules/user-stories/
+├── user-stories.module.ts      # Module definition
+├── user-stories.controller.ts  # HTTP endpoints
+├── user-stories.service.ts     # Business logic
+├── dto/                        # Data Transfer Objects
+│   ├── create-story.dto.ts    # API request DTOs
+│   ├── update-story.dto.ts    # API request DTOs
+│   └── story-response.dto.ts  # API response DTOs
+├── entities/                   # Database entities
+│   └── story.entity.ts        # Prisma schema types
+├── repositories/               # Data access (optional)
+│   └── story.repository.ts    # Only if complex queries needed
+└── interfaces/                 # TypeScript interfaces
+    └── story.interface.ts
+```
+
+### DTO Separation of Concerns (CRITICAL)
+
+**OpenAPI DTOs vs Database Entities - Keep Them Separate!**
+
+```typescript
+// ✅ CORRECT: Separate API DTOs from Database Entities
+
+// dto/create-story.dto.ts - API layer (what client sends)
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsOptional, IsEnum } from 'class-validator';
+
+export class CreateStoryDto {
+  @ApiProperty({ description: 'Story title' })
+  @IsString()
+  title: string;
+
+  @ApiProperty({ description: 'Story description', required: false })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({ enum: ['NOT_READY', 'READY', 'IN_PROGRESS', 'DONE'] })
+  @IsEnum(['NOT_READY', 'READY', 'IN_PROGRESS', 'DONE'])
+  status: string;
+
+  @ApiProperty()
+  @IsString()
+  step_id: string;
+
+  @ApiProperty()
+  @IsString()
+  release_id: string;
+}
+
+// entities/story.entity.ts - Database layer (Prisma schema type)
+export interface StoryEntity {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  step_id: string;
+  release_id: string;
+  sort_order: number;
+  created_at: Date;
+  updated_at: Date;
+  created_by: string;
+  updated_by: string | null;
+}
+```
+
+**Layer Awareness Rules:**
+
+1. **Controllers & Services**: Know about API DTOs
+   ```typescript
+   @Post()
+   async create(@Body() createDto: CreateStoryDto) {
+     return this.storiesService.create(createDto);
+   }
+   ```
+
+2. **Repositories**: Only know about Entities/Schema types
+   ```typescript
+   // ❌ WRONG: Repository using DTO
+   async create(dto: CreateStoryDto): Promise<StoryEntity> { }
+
+   // ✅ CORRECT: Repository using Entity
+   async create(data: Partial<StoryEntity>): Promise<StoryEntity> { }
+   ```
+
+3. **Services**: Transform between DTOs and Entities
+   ```typescript
+   async create(createDto: CreateStoryDto, userId: string): Promise<StoryResponseDto> {
+     // Transform DTO to Entity data
+     const entityData: Partial<StoryEntity> = {
+       title: createDto.title,
+       description: createDto.description || '',
+       status: createDto.status,
+       step_id: createDto.step_id,
+       release_id: createDto.release_id,
+       created_by: userId,
+     };
+
+     // Repository only sees Entity types
+     const story = await this.repository.create(entityData);
+
+     // Transform Entity to Response DTO
+     return this.toResponseDto(story);
+   }
+   ```
+
+
+### Preventing Drift Between Prisma Schema and DTOs (CRITICAL)
+
+**Problem**: Manually maintaining DTOs can lead to drift when the database schema changes.
+
+**Solution**: Use auto-generated DTOs from Prisma schema as the source of truth.
+
+#### Recommended Tool: `@brakebein/prisma-generator-nestjs-dto`
+
+This actively-maintained generator creates DTOs directly from your Prisma schema.
+
+**Installation:**
+```bash
+pnpm add -D @brakebein/prisma-generator-nestjs-dto
+```
+
+**Configuration in `prisma/schema.prisma`:**
+```prisma
+generator nestjsDto {
+  provider                        = "prisma-generator-nestjs-dto"
+  output                          = "../src/generated/nestjs-dto"
+  outputToNestJsResourceStructure = "false"
+  flatResourceStructure           = "false"
+  exportRelationModifierClasses   = "true"
+  reExport                        = "false"
+  createDtoPrefix                 = "Create"
+  updateDtoPrefix                 = "Update"
+  dtoSuffix                       = "Dto"
+  classValidation                 = "true"
+  fileNamingStyle                 = "kebab"
+}
+```
+
+**Generated DTOs:**
+Every time you run `npx prisma generate`, it creates:
+- `CreateDTO` - For POST requests
+- `UpdateDTO` - For PATCH requests
+- `Entity` - For responses
+- `ConnectDTO` - For relations
+
+**Control DTO Generation via Schema Annotations:**
+```prisma
+model Journey {
+  id          String   @id @default(uuid())
+  name        String
+  /// @DtoReadOnly
+  createdAt   DateTime @default(now())
+  /// @DtoCreateOptional
+  description String   @default("")
+}
+```
+
+**Common Schema Annotations:**
+- `@DtoReadOnly` - Omits field from CreateDTO and UpdateDTO (e.g., id, timestamps, audit fields)
+- `@DtoCreateOptional` - Makes field optional in CreateDTO (e.g., fields with defaults)
+- `@DtoUpdateOptional` - Makes field optional in UpdateDTO
+- `@DtoEntityHidden` - Excludes field from Entity DTO
+- `@DtoRelationRequired` - Makes relation required in DTOs
+
+**Workflow: Generating DTOs from Schema**
+
+1. **Add annotations to your Prisma model:**
+   ```prisma
+   model Release {
+     /// @DtoReadOnly
+     id           String    @id @default(uuid())
+     name         String
+     description  String    @default("")
+     /// @DtoReadOnly
+     createdAt    DateTime  @default(now()) @map("created_at")
+     /// @DtoReadOnly
+     updatedAt    DateTime  @updatedAt @map("updated_at")
+     /// @DtoReadOnly
+     createdBy    String    @map("created_by")
+   }
+   ```
+
+2. **Generate DTOs:**
+   ```bash
+   cd apps/backend
+   npx prisma generate
+   ```
+   This creates DTOs in `src/generated/nestjs-dto/`
+
+3. **Review generated DTOs** (they use camelCase):
+   - `create-release.dto.ts` - For POST requests (excludes @DtoReadOnly fields)
+   - `update-release.dto.ts` - For PATCH requests (excludes @DtoReadOnly fields)
+   - `release.dto.ts` - Entity DTO
+   - `connect-release.dto.ts` - For relations
+
+4. **Create manual API-layer DTOs** with snake_case:
+   ```typescript
+   // modules/releases/dto/release-response.dto.ts
+   export class ReleaseResponseDto {
+     @ApiProperty() id!: string;
+     @ApiProperty() name!: string;
+     @ApiProperty() created_at!: Date;  // snake_case for API
+     @ApiProperty() updated_at!: Date;
+   }
+   ```
+
+5. **Exclude generated DTOs from TypeScript compilation:**
+   ```json
+   // tsconfig.json
+   {
+     "exclude": [
+       "node_modules",
+       "dist",
+       "src/generated/**/*"  // Add this line
+     ]
+   }
+   ```
+
+**Generated DTOs serve as reference only** - they validate your schema is complete and help catch missing fields. Your manual snake_case DTOs are what the API actually uses.
+
+**Field Naming Convention Pattern (CRITICAL):**
+
+This project uses **snake_case** for API DTOs (per `DATA_MODEL_COMPREHENSIVE.md`) but Prisma uses **camelCase**. Services must transform between layers:
+
+```typescript
+// Transform snake_case DTO → camelCase Prisma (in update methods)
+async update(id: string, updateDto: UpdateJourneyDto, userId: string) {
+  const updateData: any = { updatedBy: userId };
+  if (updateDto.name !== undefined) updateData.name = updateDto.name;
+  if (updateDto.sort_order !== undefined) updateData.sortOrder = updateDto.sort_order;
+
+  return this.prisma.journey.update({ where: { id }, data: updateData });
+}
+
+// Transform camelCase Prisma → snake_case Response DTO
+private toResponseDto(journey: any): JourneyResponseDto {
+  return {
+    id: journey.id,
+    name: journey.name,
+    sort_order: journey.sortOrder,
+    created_at: journey.createdAt,
+    updated_at: journey.updatedAt,
+    created_by: journey.createdBy,
+    updated_by: journey.updatedBy,
+  };
+}
+```
+
+**Why This Pattern?**
+- ✅ **Single source of truth**: Prisma schema defines both database and DTOs
+- ✅ **Zero drift**: DTOs auto-regenerate on schema changes  
+- ✅ **API consistency**: Manual transformation ensures snake_case API contract
+- ✅ **Type safety**: TypeScript catches mismatches at compile time
+
+**Future Consideration**: The DTO generator currently uses Prisma field names (camelCase). For full automation, we'd need to either:
+1. Accept camelCase in API (violates current spec)
+2. Extend generator to support snake_case output
+3. Keep current manual transformation pattern (recommended for now)
+
+### API Documentation with Scalar
+
+Use **Scalar** instead of Swagger UI for modern, beautiful API docs.
+
+```typescript
+// main.ts
+import { NestFactory } from '@nestjs/core';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  // Swagger/OpenAPI configuration
+  const config = new DocumentBuilder()
+    .setTitle('User Story Mapping API')
+    .setDescription('API for User Story Mapping Tool')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addTag('stories')
+    .addTag('maps')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+
+  // ✅ Use Scalar instead of Swagger UI
+  // Install: pnpm add @scalar/nestjs-api-reference
+  const { ApiReference } = await import('@scalar/nestjs-api-reference');
+
+  app.use(
+    '/api/docs',
+    ApiReference({
+      spec: {
+        content: document,
+      },
+      theme: 'purple', // or 'default', 'alternate', 'moon'
+      layout: 'modern', // or 'classic'
+    })
+  );
+
+  await app.listen(3000);
+}
+
+bootstrap();
+```
+
+**Install Scalar:**
+```bash
+pnpm add @scalar/nestjs-api-reference
+```
+
+**Why Scalar over Swagger UI?**
+- ✅ Modern, beautiful design (used by Microsoft)
+- ✅ Better UX and navigation
+- ✅ SEO-optimized (server-side rendering)
+- ✅ Customizable themes
+- ✅ Works with existing OpenAPI specs
+- ✅ Same decorators as Swagger - just better UI
+
+### Module Best Practices
+
+1. **Each module is self-contained**
+   ```typescript
+   @Module({
+     imports: [],           // Other modules this depends on
+     controllers: [UserStoriesController],
+     providers: [UserStoriesService, UserStoriesRepository],
+     exports: [UserStoriesService], // What other modules can use
+   })
+   export class UserStoriesModule {}
+   ```
+
+2. **Use dependency injection**
+   ```typescript
+   @Injectable()
+   export class UserStoriesService {
+     constructor(
+       private readonly repository: UserStoriesRepository,
+       private readonly prisma: PrismaService,
+     ) {}
+   }
+   ```
+
+3. **Keep modules focused**
+   - One module per domain concept
+   - Module should be cohesive (related functionality)
+   - Avoid cross-module dependencies (use shared modules)
+
+4. **Generate DTOs from OpenAPI when possible**
+   ```bash
+   # Generate TypeScript types from OpenAPI spec
+   npx openapi-typescript ./openapi.yaml -o ./src/generated/api.ts
+   ```
+
+---
+
+## 🔐 Supabase Authentication Integration
+
+### Overview
+
+This backend uses **Supabase Auth** for user authentication with JWT tokens. The integration is built using NestJS guards and decorators.
+
+### Architecture
+
+```
+Client Request
+  ↓
+Controller (with @UseGuards(SupabaseAuthGuard))
+  ↓
+SupabaseAuthGuard validates JWT token
+  ↓
+SupabaseService (per-request Supabase client)
+  ↓
+Controller accesses user via @GetUser() decorator
+```
+
+### Installation
+
+```bash
+pnpm add @supabase/supabase-js @supabase/ssr
+```
+
+### Environment Variables
+
+```env
+# .env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+### Supabase Module Setup
+
+**1. Create Supabase Service (REQUEST-scoped)**
+
+```typescript
+// modules/supabase/supabase.service.ts
+import { Injectable, Scope, Inject } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import { Request } from 'express';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getEnvironmentConfig } from '../../config/environment.config';
+
+@Injectable({ scope: Scope.REQUEST })
+export class SupabaseService {
+  private supabaseClient: SupabaseClient;
+
+  constructor(@Inject(REQUEST) private readonly request: Request) {
+    const config = getEnvironmentConfig();
+
+    // Extract token from Authorization header
+    const authHeader = this.request.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    // Create Supabase client for server-side use
+    this.supabaseClient = createClient(
+      config.supabase.url,
+      config.supabase.anonKey,
+      {
+        auth: {
+          persistSession: false,      // Don't persist in server environment
+          autoRefreshToken: false,     // Don't auto-refresh
+          detectSessionInUrl: false,   // Server doesn't have URLs
+        },
+        global: {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      },
+    );
+  }
+
+  getClient(): SupabaseClient {
+    return this.supabaseClient;
+  }
+
+  get auth() {
+    return this.supabaseClient.auth;
+  }
+}
+```
+
+**Why REQUEST scope?**
+- Each request gets its own Supabase client instance
+- Auth token is specific to each request
+- Prevents token leaking between requests
+
+**2. Create Supabase Module**
+
+```typescript
+// modules/supabase/supabase.module.ts
+import { Module } from '@nestjs/common';
+import { SupabaseService } from './supabase.service';
+
+@Module({
+  providers: [SupabaseService],
+  exports: [SupabaseService],
+})
+export class SupabaseModule {}
+```
+
+### Auth Guard
+
+```typescript
+// common/guards/supabase-auth.guard.ts
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { SupabaseService } from '../../modules/supabase/supabase.service';
+
+@Injectable()
+export class SupabaseAuthGuard implements CanActivate {
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+
+    try {
+      const { data: { user }, error } = await this.supabaseService.auth.getUser();
+
+      if (error || !user) {
+        throw new UnauthorizedException('Invalid or missing authentication token');
+      }
+
+      // Attach user to request for controllers
+      request.user = user;
+
+      return true;
+    } catch (error) {
+      throw new UnauthorizedException('Authentication failed');
+    }
+  }
+}
+```
+
+### GetUser Decorator
+
+```typescript
+// common/decorators/get-user.decorator.ts
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { User } from '@supabase/supabase-js';
+
+export const GetUser = createParamDecorator(
+  (data: string | undefined, ctx: ExecutionContext): User => {
+    const request = ctx.switchToHttp().getRequest();
+    return data ? request.user?.[data] : request.user;
+  },
+);
+```
+
+### Auth Controller Example
+
+```typescript
+// modules/auth/auth.controller.ts
+import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
+import { GetUser } from '../../common/decorators/get-user.decorator';
+import { User } from '@supabase/supabase-js';
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('signup')
+  @ApiOperation({ summary: 'Create a new user account' })
+  async signUp(@Body() signUpDto: SignUpDto) {
+    return this.authService.signUp(signUpDto);
+  }
+
+  @Post('login')
+  @ApiOperation({ summary: 'Login with email and password' })
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+
+  @Get('profile')
+  @UseGuards(SupabaseAuthGuard)  // ✅ Protect this route
+  @ApiBearerAuth()                // ✅ Show lock icon in Scalar docs
+  @ApiOperation({ summary: 'Get current user profile' })
+  async getProfile(@GetUser() user: User) {  // ✅ Access authenticated user
+    return this.authService.getProfile();
+  }
+
+  @Post('logout')
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout the current user' })
+  async logout() {
+    return this.authService.logout();
+  }
+}
+```
+
+### Auth Service Example
+
+```typescript
+// modules/auth/auth.service.ts
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { SupabaseService } from '../supabase/supabase.service';
+
+@Injectable()
+export class AuthService {
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async signUp(signUpDto: SignUpDto) {
+    const { data, error } = await this.supabaseService.auth.signUp({
+      email: signUpDto.email,
+      password: signUpDto.password,
+    });
+
+    if (error) throw new BadRequestException(error.message);
+
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user: data.user,
+    };
+  }
+
+  async login(loginDto: LoginDto) {
+    const { data, error } = await this.supabaseService.auth.signInWithPassword({
+      email: loginDto.email,
+      password: loginDto.password,
+    });
+
+    if (error) throw new UnauthorizedException('Invalid credentials');
+
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user: data.user,
+    };
+  }
+
+  async logout() {
+    const { error } = await this.supabaseService.auth.signOut();
+    if (error) throw new BadRequestException(error.message);
+    return { message: 'Successfully logged out' };
+  }
+}
+```
+
+### Protecting Routes
+
+**Single route:**
+```typescript
+@Get('protected')
+@UseGuards(SupabaseAuthGuard)
+@ApiBearerAuth()
+getProtectedData(@GetUser() user: User) {
+  return { userId: user.id, email: user.email };
+}
+```
+
+**Entire controller:**
+```typescript
+@Controller('stories')
+@UseGuards(SupabaseAuthGuard)  // All routes protected
+@ApiBearerAuth()
+export class StoriesController {
+  // All routes require authentication
+}
+```
+
+### Client Usage (Frontend)
+
+```typescript
+// 1. Login
+const response = await fetch('http://localhost:3000/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'user@example.com', password: 'password' }),
+});
+
+const { access_token } = await response.json();
+
+// 2. Access protected routes
+const profile = await fetch('http://localhost:3000/api/auth/profile', {
+  headers: { 'Authorization': `Bearer ${access_token}` },
+});
+```
+
+### Supabase Dashboard Configuration
+
+**IMPORTANT:** Before using signup, configure email settings in Supabase:
+
+1. Go to **Authentication → Email Templates**
+2. Configure email provider (SMTP or use Supabase's)
+3. Enable email confirmations (or disable for development)
+4. Set redirect URLs for email confirmation
+
+**Development tip:** Disable email confirmation in Supabase dashboard:
+- Go to **Authentication → Settings**
+- Uncheck "Enable email confirmations"
+
+### Testing
+
+```bash
+# Signup
+curl -X POST http://localhost:3000/api/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+
+# Get profile (requires token)
+curl http://localhost:3000/api/auth/profile \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Key Points
+
+- ✅ **REQUEST-scoped** Supabase client (one per request)
+- ✅ **JWT tokens** passed via `Authorization: Bearer <token>` header
+- ✅ **Guards** validate tokens and attach user to request
+- ✅ **Decorators** make user access clean in controllers
+- ✅ **Supabase dashboard** handles user management
+- ✅ **Email configuration** required for production signup
 
 ---
 

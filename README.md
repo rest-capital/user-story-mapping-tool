@@ -102,7 +102,7 @@ pnpm --filter @user-story-mapping/backend test
 Once running, the API is available at:
 
 - **Health Check**: `http://localhost:3000/api/health`
-- **Swagger Docs**: `http://localhost:3000/api/docs`
+- **API Documentation**: `http://localhost:3000/api/docs` (powered by Scalar)
 
 Example health check response:
 ```json
@@ -165,7 +165,7 @@ See `.env.example` for all available variables.
 - **Language:** TypeScript 5.x
 - **Package Manager:** pnpm
 - **Monorepo:** pnpm workspaces
-- **API Documentation:** Swagger/OpenAPI
+- **API Documentation:** Scalar (modern OpenAPI/Swagger UI alternative)
 - **Testing:** Jest
 - **Future:** PostgreSQL (Supabase) + Prisma ORM
 

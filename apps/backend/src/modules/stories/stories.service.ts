@@ -1,0 +1,308 @@
+import { Injectable } from '@nestjs/common';
+import { BaseService } from '../../common/base.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { StoryError } from './errors/story.error';
+import { CreateStoryDto, StoryStatus } from './dto/create-story.dto';
+import { UpdateStoryDto } from './dto/update-story.dto';
+import { StoryResponseDto } from './dto/story-response.dto';
+
+@Injectable()
+export class StoriesService extends BaseService {
+  constructor(prisma: PrismaService) {
+    super(prisma);
+  }
+
+  /**
+   * Define how to create domain errors
+   */
+  protected createDomainError(
+    message: string,
+    cause?: Error,
+    context?: any,
+  ): Error {
+    return new StoryError(message, cause, context);
+  }
+
+  /**
+   * Get all stories
+   */
+  async findAll(): Promise<StoryResponseDto[]> {
+    return this.executeOperation(
+      async () => {
+        const stories = await this.prisma.story.findMany({
+          orderBy: [
+            { stepId: 'asc' },
+            { releaseId: 'asc' },
+            { sortOrder: 'asc' },
+          ],
+        });
+
+        return stories.map((story) => this.toResponseDto(story));
+      },
+      'findAllStories',
+      {},
+    );
+  }
+
+  /**
+   * Get a single story by ID
+   */
+  async findOne(id: string): Promise<StoryResponseDto> {
+    this.validateRequired(id, 'id', 'Story');
+
+    return this.executeOperation(
+      async () => {
+        const story = await this.prisma.story.findUnique({
+          where: { id },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        return this.toResponseDto(story);
+      },
+      'findOneStory',
+      { storyId: id },
+    );
+  }
+
+  /**
+   * Create a new story with proper sort order (1000-based)
+   */
+  async create(
+    createDto: CreateStoryDto,
+    userId: string,
+  ): Promise<StoryResponseDto> {
+    this.validateRequired(createDto.step_id, 'step_id');
+    this.validateRequired(createDto.release_id, 'release_id');
+    this.validateRequired(createDto.title, 'title');
+
+    return this.executeOperation(
+      async () => {
+        // Validate that step and release exist
+        const step = await this.prisma.step.findUnique({
+          where: { id: createDto.step_id },
+        });
+
+        if (!step) {
+          throw new StoryError('Step not found');
+        }
+
+        const release = await this.prisma.release.findUnique({
+          where: { id: createDto.release_id },
+        });
+
+        if (!release) {
+          throw new StoryError('Release not found');
+        }
+
+        // CRITICAL: Calculate next sort_order (1000-based spacing)
+        const existingStories = await this.prisma.story.count({
+          where: {
+            stepId: createDto.step_id,
+            releaseId: createDto.release_id,
+          },
+        });
+
+        // Stories use 1000-based spacing: 1000, 2000, 3000...
+        const sortOrder = (existingStories + 1) * 1000;
+
+        // Create story with defaults
+        const story = await this.prisma.story.create({
+          data: {
+            stepId: createDto.step_id,
+            releaseId: createDto.release_id,
+            title: createDto.title,
+            description: createDto.description || '',
+            status: createDto.status || StoryStatus.NOT_READY,
+            size: createDto.size || null,
+            sortOrder,
+            // Default label
+            labelId: null,
+            labelName: 'Story',
+            labelColor: '#3B82F6',
+            createdBy: userId,
+          },
+        });
+
+        return this.toResponseDto(story);
+      },
+      'createStory',
+      { stepId: createDto.step_id, releaseId: createDto.release_id },
+    );
+  }
+
+  /**
+   * Update story with validation and field transformation
+   */
+  async update(
+    id: string,
+    updateDto: UpdateStoryDto,
+    userId: string,
+  ): Promise<StoryResponseDto> {
+    this.validateRequired(id, 'id', 'Story');
+
+    return this.executeOperation(
+      async () => {
+        const story = await this.prisma.story.findUnique({
+          where: { id },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // CRITICAL: Conditional assignment to prevent undefined overwrites
+        // Transform snake_case DTO → camelCase Prisma
+        const updateData: any = { updatedBy: userId };
+
+        if (updateDto.title !== undefined) updateData.title = updateDto.title;
+        if (updateDto.description !== undefined)
+          updateData.description = updateDto.description;
+        if (updateDto.status !== undefined)
+          updateData.status = updateDto.status;
+        if (updateDto.size !== undefined) updateData.size = updateDto.size;
+
+        // Handle moving to different cell
+        if (updateDto.step_id !== undefined) {
+          // Validate step exists
+          const step = await this.prisma.step.findUnique({
+            where: { id: updateDto.step_id },
+          });
+          if (!step) {
+            throw new StoryError('Target step not found');
+          }
+          updateData.stepId = updateDto.step_id;
+        }
+
+        if (updateDto.release_id !== undefined) {
+          // Validate release exists
+          const release = await this.prisma.release.findUnique({
+            where: { id: updateDto.release_id },
+          });
+          if (!release) {
+            throw new StoryError('Target release not found');
+          }
+          updateData.releaseId = updateDto.release_id;
+        }
+
+        // If moving to a new cell, recalculate sort order
+        if (updateDto.step_id || updateDto.release_id) {
+          const newStepId = updateDto.step_id || story.stepId;
+          const newReleaseId = updateDto.release_id || story.releaseId;
+
+          const storiesInNewCell = await this.prisma.story.count({
+            where: {
+              stepId: newStepId,
+              releaseId: newReleaseId,
+            },
+          });
+
+          updateData.sortOrder = (storiesInNewCell + 1) * 1000;
+        } else if (updateDto.sort_order !== undefined) {
+          // Manual reorder within same cell
+          updateData.sortOrder = updateDto.sort_order;
+        }
+
+        const updatedStory = await this.prisma.story.update({
+          where: { id },
+          data: updateData,
+        });
+
+        return this.toResponseDto(updatedStory);
+      },
+      'updateStory',
+      { storyId: id },
+    );
+  }
+
+  /**
+   * CRITICAL: Delete story with dependency cleanup
+   * Must handle all relationships in correct order using transaction
+   */
+  async remove(id: string): Promise<{ success: boolean; dependencies_removed: number }> {
+    this.validateRequired(id, 'id', 'Story');
+
+    return this.executeInTransaction(
+      async (tx) => {
+        // Verify story exists
+        const story = await tx.story.findUnique({
+          where: { id },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // CRITICAL: Delete in correct order to handle foreign keys
+
+        // 1. Delete StoryLink records (both source and target)
+        const deletedLinks = await tx.storyLink.deleteMany({
+          where: {
+            OR: [
+              { sourceStoryId: id },
+              { targetStoryId: id },
+            ],
+          },
+        });
+
+        // 2. Delete StoryTag junction records
+        await tx.storyTag.deleteMany({
+          where: { storyId: id },
+        });
+
+        // 3. Delete StoryPersona junction records
+        await tx.storyPersona.deleteMany({
+          where: { storyId: id },
+        });
+
+        // 4. Delete Comment records
+        await tx.comment.deleteMany({
+          where: { storyId: id },
+        });
+
+        // 5. Delete Attachment records
+        await tx.attachment.deleteMany({
+          where: { storyId: id },
+        });
+
+        // 6. Finally delete the story itself
+        await tx.story.delete({
+          where: { id },
+        });
+
+        return {
+          success: true,
+          dependencies_removed: deletedLinks.count,
+        };
+      },
+      'deleteStory',
+      { storyId: id },
+    );
+  }
+
+  /**
+   * Transform Prisma Story to Response DTO
+   * Maps camelCase Prisma fields to snake_case API fields
+   */
+  private toResponseDto(story: any): StoryResponseDto {
+    return {
+      id: story.id,
+      step_id: story.stepId,
+      release_id: story.releaseId,
+      title: story.title,
+      description: story.description,
+      status: story.status,
+      size: story.size,
+      label_id: story.labelId,
+      label_name: story.labelName,
+      label_color: story.labelColor,
+      sort_order: story.sortOrder,
+      created_at: story.createdAt,
+      updated_at: story.updatedAt,
+      created_by: story.createdBy,
+      updated_by: story.updatedBy,
+    };
+  }
+}

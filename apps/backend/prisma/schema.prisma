@@ -1,0 +1,261 @@
+// This is your Prisma schema file for User Story Mapping Tool
+// Based on DATA_MODEL_COMPREHENSIVE.md v2.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator nestjsDto {
+  provider                        = "prisma-generator-nestjs-dto"
+  output                          = "../src/generated/nestjs-dto"
+  outputToNestJsResourceStructure = "false"
+  flatResourceStructure           = "false"
+  exportRelationModifierClasses   = "true"
+  reExport                        = "false"
+  createDtoPrefix                 = "Create"
+  updateDtoPrefix                 = "Update"
+  dtoSuffix                       = "Dto"
+  classValidation                 = "true"
+  fileNamingStyle                 = "kebab"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum StoryStatus {
+  NOT_READY
+  READY
+  IN_PROGRESS
+  DONE
+  BLOCKED
+}
+
+enum StoryLinkType {
+  LINKED_TO        // "linked to" - General dependency
+  BLOCKS           // "blocks" - Source blocks target
+  IS_BLOCKED_BY    // "is blocked by" - Source blocked by target
+  DUPLICATES       // "duplicates" - Duplicate story
+  IS_DUPLICATED_BY // "is duplicated by" - Duplicated by another
+}
+
+// ============================================================================
+// CORE ENTITIES
+// ============================================================================
+
+model Journey {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String   @default("")
+  sortOrder   Int      @map("sort_order")
+  color       String   @default("#8B5CF6")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String   @map("created_by")
+  updatedBy   String?  @map("updated_by")
+
+  // Relationships
+  steps Step[]
+
+  @@index([sortOrder], name: "idx_journeys_sort")
+  @@map("journeys")
+}
+
+model Step {
+  id          String   @id @default(uuid())
+  journeyId   String   @map("journey_id")
+  name        String
+  description String   @default("")
+  sortOrder   Int      @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String   @map("created_by")
+  updatedBy   String?  @map("updated_by")
+
+  // Relationships
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  stories Story[]
+
+  @@index([journeyId, sortOrder], name: "idx_steps_journey_sort")
+  @@index([journeyId], name: "idx_steps_journey")
+  @@map("steps")
+}
+
+model Release {
+  /// @DtoReadOnly
+  id           String    @id @default(uuid())
+  name         String
+  description  String    @default("")
+  startDate    DateTime? @map("start_date")
+  dueDate      DateTime? @map("due_date")
+  shipped      Boolean   @default(false)
+  /// @DtoReadOnly
+  /// @DtoCreateOptional
+  isUnassigned Boolean   @default(false) @map("is_unassigned")
+  /// @DtoCreateOptional
+  sortOrder    Int       @map("sort_order")
+  /// @DtoReadOnly
+  createdAt    DateTime  @default(now()) @map("created_at")
+  /// @DtoReadOnly
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  /// @DtoReadOnly
+  createdBy    String    @map("created_by")
+  /// @DtoReadOnly
+  updatedBy    String?   @map("updated_by")
+
+  // Relationships
+  stories  Story[]
+  comments Comment[]
+
+  @@unique([isUnassigned], name: "unique_unassigned")
+  @@index([sortOrder], name: "idx_releases_sort")
+  @@map("releases")
+}
+
+model Story {
+  id          String      @id @default(uuid())
+  stepId      String      @map("step_id")
+  releaseId   String      @map("release_id")
+  title       String
+  description String      @default("")
+  status      StoryStatus @default(NOT_READY)
+  size        Int?
+  sortOrder   Int         @map("sort_order") // 1000-based: 1000, 2000, 3000...
+  labelId     String?     @map("label_id")
+  labelName   String      @default("Story") @map("label_name")
+  labelColor  String      @default("#3B82F6") @map("label_color")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  createdBy   String      @map("created_by")
+  updatedBy   String?     @map("updated_by")
+
+  // Relationships
+  step       Step       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  release    Release    @relation(fields: [releaseId], references: [id], onDelete: NoAction) // Handled by app
+  tags       StoryTag[]
+  personas   StoryPersona[]
+  comments   Comment[]
+  attachments Attachment[]
+
+  // Dependencies (self-referential many-to-many)
+  sourceLinks StoryLink[] @relation("SourceStory")
+  targetLinks StoryLink[] @relation("TargetStory")
+
+  @@index([stepId, releaseId, sortOrder], name: "idx_stories_cell_sort")
+  @@index([stepId], name: "idx_stories_step")
+  @@index([releaseId], name: "idx_stories_release")
+  @@index([status], name: "idx_stories_status")
+  @@map("stories")
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String   @default("#8B5CF6")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  stories StoryTag[]
+
+  @@map("tags")
+}
+
+model Persona {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  avatarUrl   String?  @map("avatar_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  stories StoryPersona[]
+
+  @@map("personas")
+}
+
+// ============================================================================
+// JUNCTION TABLES
+// ============================================================================
+
+model StoryTag {
+  storyId String @map("story_id")
+  tagId   String @map("tag_id")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, tagId])
+  @@map("story_tags")
+}
+
+model StoryPersona {
+  storyId   String @map("story_id")
+  personaId String @map("persona_id")
+
+  story   Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  persona Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, personaId])
+  @@map("story_personas")
+}
+
+model StoryLink {
+  id            String        @id @default(uuid())
+  sourceStoryId String        @map("source_story_id")
+  targetStoryId String        @map("target_story_id")
+  linkType      StoryLinkType @map("link_type")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  sourceStory Story @relation("SourceStory", fields: [sourceStoryId], references: [id], onDelete: Cascade)
+  targetStory Story @relation("TargetStory", fields: [targetStoryId], references: [id], onDelete: Cascade)
+
+  @@index([sourceStoryId], name: "idx_story_links_source")
+  @@index([targetStoryId], name: "idx_story_links_target")
+  @@map("story_links")
+}
+
+// ============================================================================
+// SUPPORTING ENTITIES
+// ============================================================================
+
+model Comment {
+  id        String    @id @default(uuid())
+  storyId   String?   @map("story_id")
+  releaseId String?   @map("release_id")
+  authorId  String    @map("author_id")
+  author    String
+  avatarUrl String?   @map("avatar_url")
+  content   String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  story   Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  release Release? @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([storyId], name: "idx_comments_story")
+  @@index([releaseId], name: "idx_comments_release")
+  @@index([authorId], name: "idx_comments_author")
+  @@map("comments")
+}
+
+model Attachment {
+  id        String   @id @default(uuid())
+  storyId   String   @map("story_id")
+  fileName  String   @map("file_name")
+  fileUrl   String   @map("file_url")
+  fileType  String   @map("file_type")
+  fileSize  Int      @map("file_size")
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String   @map("created_by")
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId], name: "idx_attachments_story")
+  @@map("attachments")
+}
