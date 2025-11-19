@@ -227,7 +227,12 @@ export class StepsService extends BaseService {
   ): Promise<StepResponseDto> {
     this.validateRequired(id, 'id', 'Step');
     this.validateRequired(userId, 'userId');
-    this.validatePositive(reorderDto.new_sort_order + 1, 'new_sort_order');
+    this.validateRange(
+      reorderDto.new_sort_order,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      'new_sort_order',
+    );
 
     return this.executeOperation(
       async () => {

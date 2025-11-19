@@ -187,7 +187,12 @@ export class JourneysService extends BaseService {
   ): Promise<JourneyResponseDto> {
     this.validateRequired(id, 'id', 'Journey');
     this.validateRequired(userId, 'userId');
-    this.validatePositive(reorderDto.new_sort_order + 1, 'new_sort_order');
+    this.validateRange(
+      reorderDto.new_sort_order,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      'new_sort_order',
+    );
 
     return this.executeOperation(
       async () => {
