@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StepError } from './errors/step.error';
 import { CreateStepDto } from './dto/create-step.dto';
 import { UpdateStepDto } from './dto/update-step.dto';
+import { ReorderStepDto } from './dto/reorder-step.dto';
 import { StepResponseDto } from './dto/step-response.dto';
 
 /**
@@ -212,6 +213,46 @@ export class StepsService extends BaseService {
       },
       'deleteStep',
       { stepId: id },
+    );
+  }
+
+  /**
+   * Reorder a step
+   * Updates the sort_order to change position within a journey
+   */
+  async reorder(
+    id: string,
+    reorderDto: ReorderStepDto,
+    userId: string,
+  ): Promise<StepResponseDto> {
+    this.validateRequired(id, 'id', 'Step');
+    this.validateRequired(userId, 'userId');
+    this.validatePositive(reorderDto.new_sort_order + 1, 'new_sort_order');
+
+    return this.executeOperation(
+      async () => {
+        // Verify step exists
+        const existing = await this.prisma.step.findUnique({
+          where: { id },
+        });
+
+        if (!existing) {
+          throw new StepError('Step not found');
+        }
+
+        // Update step with new sort_order
+        const step = await this.prisma.step.update({
+          where: { id },
+          data: {
+            sortOrder: reorderDto.new_sort_order,
+            updatedBy: userId,
+          },
+        });
+
+        return this.toResponseDto(step);
+      },
+      'reorderStep',
+      { stepId: id, newSortOrder: reorderDto.new_sort_order, userId },
     );
   }
 

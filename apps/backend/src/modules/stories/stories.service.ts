@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StoryError } from './errors/story.error';
 import { CreateStoryDto, StoryStatus } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
+import { MoveStoryDto } from './dto/move-story.dto';
 import { StoryResponseDto } from './dto/story-response.dto';
 
 @Injectable()
@@ -64,6 +65,106 @@ export class StoriesService extends BaseService {
       },
       'findOneStory',
       { storyId: id },
+    );
+  }
+
+  /**
+   * Get all stories for a specific step (across all releases)
+   */
+  async findByStepId(stepId: string): Promise<StoryResponseDto[]> {
+    this.validateRequired(stepId, 'stepId');
+
+    return this.executeOperation(
+      async () => {
+        // Validate step exists
+        const step = await this.prisma.step.findUnique({
+          where: { id: stepId },
+        });
+
+        if (!step) {
+          throw new StoryError('Step not found');
+        }
+
+        const stories = await this.prisma.story.findMany({
+          where: { stepId },
+          orderBy: [{ releaseId: 'asc' }, { sortOrder: 'asc' }],
+        });
+
+        return stories.map((story) => this.toResponseDto(story));
+      },
+      'findStoriesByStepId',
+      { stepId },
+    );
+  }
+
+  /**
+   * Get all stories for a specific release (across all steps)
+   */
+  async findByReleaseId(releaseId: string): Promise<StoryResponseDto[]> {
+    this.validateRequired(releaseId, 'releaseId');
+
+    return this.executeOperation(
+      async () => {
+        // Validate release exists
+        const release = await this.prisma.release.findUnique({
+          where: { id: releaseId },
+        });
+
+        if (!release) {
+          throw new StoryError('Release not found');
+        }
+
+        const stories = await this.prisma.story.findMany({
+          where: { releaseId },
+          orderBy: [{ stepId: 'asc' }, { sortOrder: 'asc' }],
+        });
+
+        return stories.map((story) => this.toResponseDto(story));
+      },
+      'findStoriesByReleaseId',
+      { releaseId },
+    );
+  }
+
+  /**
+   * Get all stories for a specific cell (step + release)
+   */
+  async findByCell(stepId: string, releaseId: string): Promise<StoryResponseDto[]> {
+    this.validateRequired(stepId, 'stepId');
+    this.validateRequired(releaseId, 'releaseId');
+
+    return this.executeOperation(
+      async () => {
+        // Validate step exists
+        const step = await this.prisma.step.findUnique({
+          where: { id: stepId },
+        });
+
+        if (!step) {
+          throw new StoryError('Step not found');
+        }
+
+        // Validate release exists
+        const release = await this.prisma.release.findUnique({
+          where: { id: releaseId },
+        });
+
+        if (!release) {
+          throw new StoryError('Release not found');
+        }
+
+        const stories = await this.prisma.story.findMany({
+          where: {
+            stepId,
+            releaseId,
+          },
+          orderBy: { sortOrder: 'asc' },
+        });
+
+        return stories.map((story) => this.toResponseDto(story));
+      },
+      'findStoriesByCell',
+      { stepId, releaseId },
     );
   }
 
@@ -279,6 +380,88 @@ export class StoriesService extends BaseService {
       },
       'deleteStory',
       { storyId: id },
+    );
+  }
+
+  /**
+   * Move a story to a different cell (step + release)
+   * Dedicated endpoint for moving stories with automatic sort_order recalculation
+   */
+  async move(
+    id: string,
+    moveDto: MoveStoryDto,
+    userId: string,
+  ): Promise<StoryResponseDto> {
+    this.validateRequired(id, 'id', 'Story');
+    this.validateRequired(userId, 'userId');
+
+    // At least one of step_id or release_id must be provided
+    if (!moveDto.step_id && !moveDto.release_id) {
+      throw new StoryError(
+        'At least one of step_id or release_id must be provided to move a story',
+      );
+    }
+
+    return this.executeOperation(
+      async () => {
+        // Verify story exists
+        const story = await this.prisma.story.findUnique({
+          where: { id },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // Determine new cell coordinates
+        const newStepId = moveDto.step_id || story.stepId;
+        const newReleaseId = moveDto.release_id || story.releaseId;
+
+        // Validate new step exists (if changing)
+        if (moveDto.step_id) {
+          const step = await this.prisma.step.findUnique({
+            where: { id: moveDto.step_id },
+          });
+          if (!step) {
+            throw new StoryError('Target step not found');
+          }
+        }
+
+        // Validate new release exists (if changing)
+        if (moveDto.release_id) {
+          const release = await this.prisma.release.findUnique({
+            where: { id: moveDto.release_id },
+          });
+          if (!release) {
+            throw new StoryError('Target release not found');
+          }
+        }
+
+        // Calculate new sort_order for the target cell
+        const storiesInNewCell = await this.prisma.story.count({
+          where: {
+            stepId: newStepId,
+            releaseId: newReleaseId,
+          },
+        });
+
+        const newSortOrder = (storiesInNewCell + 1) * 1000;
+
+        // Move the story
+        const movedStory = await this.prisma.story.update({
+          where: { id },
+          data: {
+            stepId: newStepId,
+            releaseId: newReleaseId,
+            sortOrder: newSortOrder,
+            updatedBy: userId,
+          },
+        });
+
+        return this.toResponseDto(movedStory);
+      },
+      'moveStory',
+      { storyId: id, newStepId: moveDto.step_id, newReleaseId: moveDto.release_id, userId },
     );
   }
 

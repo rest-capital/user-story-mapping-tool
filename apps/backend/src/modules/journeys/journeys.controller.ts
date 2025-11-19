@@ -20,6 +20,7 @@ import { User } from '@supabase/supabase-js';
 import { JourneysService } from './journeys.service';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';
+import { ReorderJourneyDto } from './dto/reorder-journey.dto';
 import { JourneyResponseDto } from './dto/journey-response.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { GetUser } from '../../common/decorators/get-user.decorator';
@@ -175,5 +176,38 @@ export class JourneysController {
   })
   async remove(@Param('id') id: string): Promise<{ success: boolean }> {
     return this.journeysService.remove(id);
+  }
+
+  /**
+   * Reorder a journey
+   * POST /journeys/:id/reorder
+   *
+   * Updates the sort_order to change position in the list
+   */
+  @Post(':id/reorder')
+  @ApiOperation({ summary: 'Reorder a journey by updating its sort order' })
+  @ApiResponse({
+    status: 200,
+    description: 'Journey reordered successfully',
+    type: JourneyResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input data',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Journey not found',
+  })
+  async reorder(
+    @Param('id') id: string,
+    @Body() reorderDto: ReorderJourneyDto,
+    @GetUser() user: User,
+  ): Promise<JourneyResponseDto> {
+    return this.journeysService.reorder(id, reorderDto, user.id);
   }
 }

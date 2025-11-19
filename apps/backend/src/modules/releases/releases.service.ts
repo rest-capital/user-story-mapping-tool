@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReleaseError } from './errors/release.error';
 import { CreateReleaseDto } from './dto/create-release.dto';
 import { UpdateReleaseDto } from './dto/update-release.dto';
+import { ReorderReleaseDto } from './dto/reorder-release.dto';
 import { ReleaseResponseDto } from './dto/release-response.dto';
 
 @Injectable()
@@ -217,6 +218,46 @@ export class ReleasesService extends BaseService {
       },
       'deleteRelease',
       { releaseId: id },
+    );
+  }
+
+  /**
+   * Reorder a release
+   * Updates the sort_order to change position in the list
+   */
+  async reorder(
+    id: string,
+    reorderDto: ReorderReleaseDto,
+    userId: string,
+  ): Promise<ReleaseResponseDto> {
+    this.validateRequired(id, 'id', 'Release');
+    this.validateRequired(userId, 'userId');
+    this.validatePositive(reorderDto.new_sort_order + 1, 'new_sort_order');
+
+    return this.executeOperation(
+      async () => {
+        // Verify release exists
+        const existing = await this.prisma.release.findUnique({
+          where: { id },
+        });
+
+        if (!existing) {
+          throw new ReleaseError('Release not found');
+        }
+
+        // Update release with new sort_order
+        const release = await this.prisma.release.update({
+          where: { id },
+          data: {
+            sortOrder: reorderDto.new_sort_order,
+            updatedBy: userId,
+          },
+        });
+
+        return this.toResponseDto(release);
+      },
+      'reorderRelease',
+      { releaseId: id, newSortOrder: reorderDto.new_sort_order, userId },
     );
   }
 

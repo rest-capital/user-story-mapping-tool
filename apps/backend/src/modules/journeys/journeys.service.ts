@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JourneyError } from './errors/journey.error';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';
+import { ReorderJourneyDto } from './dto/reorder-journey.dto';
 import { JourneyResponseDto } from './dto/journey-response.dto';
 
 /**
@@ -172,6 +173,46 @@ export class JourneysService extends BaseService {
       },
       'deleteJourney',
       { journeyId: id },
+    );
+  }
+
+  /**
+   * Reorder a journey
+   * Updates the sort_order to change position in the list
+   */
+  async reorder(
+    id: string,
+    reorderDto: ReorderJourneyDto,
+    userId: string,
+  ): Promise<JourneyResponseDto> {
+    this.validateRequired(id, 'id', 'Journey');
+    this.validateRequired(userId, 'userId');
+    this.validatePositive(reorderDto.new_sort_order + 1, 'new_sort_order');
+
+    return this.executeOperation(
+      async () => {
+        // Verify journey exists
+        const existing = await this.prisma.journey.findUnique({
+          where: { id },
+        });
+
+        if (!existing) {
+          throw new JourneyError('Journey not found');
+        }
+
+        // Update journey with new sort_order
+        const journey = await this.prisma.journey.update({
+          where: { id },
+          data: {
+            sortOrder: reorderDto.new_sort_order,
+            updatedBy: userId,
+          },
+        });
+
+        return this.toResponseDto(journey);
+      },
+      'reorderJourney',
+      { journeyId: id, newSortOrder: reorderDto.new_sort_order, userId },
     );
   }
 

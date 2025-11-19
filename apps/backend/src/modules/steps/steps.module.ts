@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { StepsController, JourneyStepsController } from './steps.controller';
 import { StepsService } from './steps.service';
 import { SupabaseModule } from '../supabase/supabase.module';
+import { StoriesModule } from '../stories/stories.module';
 
 /**
  * Steps Module
@@ -14,7 +15,7 @@ import { SupabaseModule } from '../supabase/supabase.module';
  * - Entities (database types)
  */
 @Module({
-  imports: [SupabaseModule],
+  imports: [SupabaseModule, StoriesModule],
   controllers: [StepsController, JourneyStepsController],
   providers: [StepsService],
   exports: [StepsService], // Export for other modules if needed
