@@ -190,11 +190,84 @@ function checkExistingDatabases(numWorkers) {
 }
 
 /**
+ * Check for orphaned test databases (from previous runs with more workers)
+ * Checks up to 32 databases (same as docker-cleanup.js)
+ */
+function checkOrphanedDatabases(numWorkers) {
+  const orphaned = [];
+
+  // Check beyond current worker count, up to 32 (covers machines up to 64 cores)
+  for (let i = numWorkers + 1; i <= 32; i++) {
+    const dbName = `test_db_${i}`;
+    const checkCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT 1 FROM pg_database WHERE datname='${dbName}'"`;
+    const result = execCommand(checkCmd, { silent: true, ignoreError: true });
+
+    if (result && result.trim() === '1') {
+      orphaned.push(dbName);
+    }
+  }
+
+  return orphaned;
+}
+
+/**
+ * Clean up orphaned databases
+ */
+async function cleanupOrphanedDatabases(orphaned) {
+  log.warn(`Found ${orphaned.length} orphaned test database(s): ${orphaned.join(', ')}`);
+  log.info('These were created for more workers than you currently need.');
+
+  const shouldCleanup = await askYesNo('Delete orphaned databases? (Y/n): ', true);
+
+  if (!shouldCleanup) {
+    log.info('Keeping orphaned databases (you can clean them later with: pnpm docker:clean:test)');
+    return;
+  }
+
+  console.log(''); // Blank line
+  log.header('Cleaning Up Orphaned Databases');
+
+  for (const dbName of orphaned) {
+    try {
+      // Terminate any active connections
+      const terminateCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()"`;
+      execCommand(terminateCmd, { silent: true, ignoreError: true });
+
+      // Small delay
+      execSync('sleep 0.1', { stdio: 'ignore' });
+
+      // Drop the database
+      const dropCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -c "DROP DATABASE IF EXISTS ${dbName}"`;
+      const result = execCommand(dropCmd, { silent: true, ignoreError: true });
+
+      if (result !== null) {
+        log.success(`Deleted: ${dbName}`);
+      } else {
+        log.warn(`Failed to delete: ${dbName} (may still be in use)`);
+      }
+    } catch (error) {
+      log.warn(`Failed to delete: ${dbName}`);
+    }
+  }
+
+  console.log(''); // Blank line
+}
+
+/**
  * Create or recreate a database
  */
 function createDatabase(dbName, isRecreate) {
   const action = isRecreate ? 'Recreating' : 'Creating';
   log.step(`${action} database: ${dbName}`);
+
+  // Terminate active connections first (prevents "database is being accessed" errors)
+  if (isRecreate) {
+    const terminateCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()"`;
+    execCommand(terminateCmd, { silent: true, ignoreError: true });
+
+    // Small delay to ensure connections are terminated
+    execSync('sleep 0.1', { stdio: 'ignore' });
+  }
 
   // Drop if exists (for recreate), then create
   const sql = `
@@ -207,6 +280,10 @@ function createDatabase(dbName, isRecreate) {
 
   if (result === null) {
     log.error(`Failed to create ${dbName}`);
+    log.info('Possible causes:');
+    log.info('  - Tests are still running (stop them first)');
+    log.info('  - Database has active connections');
+    log.info('  - PostgreSQL permissions issue');
     throw new Error(`Database creation failed for ${dbName}`);
   }
 
@@ -274,6 +351,13 @@ async function main() {
 
   // Step 3: Check existing databases
   const existing = checkExistingDatabases(workers);
+
+  // Step 3.5: Check for orphaned databases (from previous runs with more workers)
+  const orphaned = checkOrphanedDatabases(workers);
+  if (orphaned.length > 0) {
+    console.log(''); // Blank line
+    await cleanupOrphanedDatabases(orphaned);
+  }
 
   // Step 4: Ask for confirmation if recreating
   if (existing.length > 0) {
