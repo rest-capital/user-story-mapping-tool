@@ -1,0 +1,102 @@
+# User Story Mapping Tool - Docker Compose Configuration (FIXED VERSION)
+# Orchestrates backend service with local Supabase (running on host)
+
+# ==============================================================================
+# Services
+# ==============================================================================
+services:
+  # Backend (NestJS + Prisma)
+  backend:
+    container_name: ${COMPOSE_PROJECT_NAME:-user-story-mapping}_backend
+    labels:
+      - "worktree.branch=${BRANCH_NAME}"
+      - "worktree.project=user-story-mapping"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    # FIX: Use workspace root as working directory for consistency
+    working_dir: /app
+    # FIX: Use --filter command from workspace root
+    command: pnpm --filter @user-story-mapping/backend dev
+
+    # Environment configuration
+    env_file:
+      - apps/backend/.env.local
+    environment:
+      - NODE_ENV=development
+      # Override database URL to use host.docker.internal for Docker -> Host communication
+      - DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres
+      - DIRECT_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres
+      - SUPABASE_URL=http://host.docker.internal:54321
+
+    # Port mapping
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+
+    # Volume mounts for hot reload
+    volumes:
+      # Map entire project (for pnpm workspaces)
+      - .:/app
+      # Anonymous volumes to prevent node_modules conflicts
+      # These ensure container's node_modules aren't overwritten by host
+      - /app/node_modules
+      - /app/apps/backend/node_modules
+      # CRITICAL FIX: Preserve container's built dist/ directory
+      # Without this, the volume mount .:/app would hide the container's dist/
+      # causing startup failures on fresh clones (where host has no dist/)
+      - /app/apps/backend/dist
+
+    # Log rotation to prevent disk bloat (industry standard)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"  # Max size per log file
+        max-file: "5"    # Keep 5 rotated files
+
+    # Hot reload support with Docker watch mode
+    # This enables fast, efficient file watching for development
+    develop:
+      watch:
+        # Sync TypeScript source files
+        - action: sync
+          path: ./apps/backend/src
+          target: /app/apps/backend/src
+          ignore:
+            - node_modules/
+
+        # Rebuild on package.json changes (dependency updates)
+        - action: rebuild
+          path: ./apps/backend/package.json
+
+        # Sync Prisma schema changes
+        - action: sync
+          path: ./apps/backend/prisma
+          target: /app/apps/backend/prisma
+          ignore:
+            - dev.db
+            - dev.db-journal
+
+    # Health check
+    # FIX: Now works because curl is installed in Dockerfile
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    # Restart policy
+    restart: unless-stopped
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+# Use default bridge network for simplicity
+# Backend connects to Supabase on host via host.docker.internal
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+# Anonymous volumes are defined inline in the backend service
+# No named volumes needed for this setup

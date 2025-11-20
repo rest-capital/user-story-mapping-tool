@@ -8,9 +8,21 @@
     "dev": "pnpm --filter @user-story-mapping/backend dev",
     "start": "pnpm --filter @user-story-mapping/backend start",
     "test": "pnpm -r test",
+    "test:setup": "node scripts/setup-test-databases.js",
     "lint": "pnpm -r lint",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
-    "clean": "pnpm -r clean && rm -rf node_modules"
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:build": "docker compose build",
+    "docker:restart": "docker compose down && docker compose up -d",
+    "docker:clean": "node scripts/docker-cleanup.js normal",
+    "docker:clean:full": "node scripts/docker-cleanup.js nuclear",
+    "docker:clean:test": "node scripts/docker-cleanup.js test-db",
+    "docker:status": "docker compose ps && docker system df",
+    "worktree:create": "bash scripts/create-worktree.sh",
+    "worktree:cleanup": "node scripts/worktree-cleanup.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
