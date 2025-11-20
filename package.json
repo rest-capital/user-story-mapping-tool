@@ -22,6 +22,7 @@
     "docker:clean:test": "node scripts/docker-cleanup.js test-db",
     "docker:status": "docker compose ps && docker system df",
     "worktree:create": "bash scripts/create-worktree.sh",
+    "worktree:remove": "node scripts/worktree-remove.js",
     "worktree:cleanup": "node scripts/worktree-cleanup.js"
   },
   "devDependencies": {
