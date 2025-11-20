@@ -38,10 +38,8 @@ const log = {
   header: (msg) => console.log(`\n${colors.bright}${msg}${colors.reset}\n`),
 };
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+// Readline interface - initialized in main() to prevent memory leak if imported as module
+let rl;
 
 function question(query) {
   return new Promise((resolve) => rl.question(query, resolve));
@@ -320,6 +318,12 @@ function applyMigrations(dbName) {
  * Main setup flow
  */
 async function main() {
+  // Initialize readline interface for user prompts
+  rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
   log.header('🗄️  Test Database Setup');
 
   // Step 1: Check prerequisites
@@ -428,13 +432,9 @@ async function main() {
   rl.close();
 }
 
-// Run the script
-if (require.main === module) {
-  main().catch((error) => {
-    log.error(`Setup failed: ${error.message}`);
-    rl.close();
-    process.exit(1);
-  });
-}
-
-module.exports = { main };
+// Run the script (CLI-only, not importable as module)
+main().catch((error) => {
+  log.error(`Setup failed: ${error.message}`);
+  if (rl) rl.close();
+  process.exit(1);
+});
