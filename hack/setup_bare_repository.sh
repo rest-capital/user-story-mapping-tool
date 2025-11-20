@@ -42,11 +42,23 @@ echo ""
 
 # Check if bare repo already exists
 if [ -d "$BARE_REPO" ]; then
-  echo -e "${YELLOW}⚠️  Bare repository already exists at: ${BARE_REPO}${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${RED}  ⚠️  WARNING: Bare repository already exists!${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
-  read -p "Do you want to delete and recreate it? (y/n): " -n 1 -r
+  echo -e "${RED}Deleting the bare repository will PERMANENTLY DELETE:${NC}"
+  echo -e "${RED}  - Any unpushed commits in worktrees${NC}"
+  echo -e "${RED}  - Any uncommitted changes${NC}"
+  echo -e "${RED}  - Any stashes${NC}"
   echo ""
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+  echo -e "${YELLOW}Existing worktrees:${NC}"
+  cd "$BARE_REPO"
+  git worktree list || echo "  (could not list worktrees)"
+  echo ""
+  echo -e "${YELLOW}Please verify all work is pushed to remote!${NC}"
+  echo ""
+  read -p "Type 'DELETE' to confirm deletion (anything else cancels): " answer
+  if [ "$answer" != "DELETE" ]; then
     echo -e "${BLUE}ℹ️  Setup cancelled${NC}"
     exit 0
   fi
@@ -76,6 +88,22 @@ git fetch origin
 echo -e "${BLUE}📁 Creating worktrees directory...${NC}"
 mkdir -p "$WORKTREE_BASE"
 
+# Detect default branch (BUG 99 FIX: don't hardcode "main")
+echo -e "${BLUE}🔍 Detecting default branch...${NC}"
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+if [ -z "$DEFAULT_BRANCH" ]; then
+  # Fallback: try main, then master
+  if git show-ref --verify --quiet refs/remotes/origin/main; then
+    DEFAULT_BRANCH="main"
+  elif git show-ref --verify --quiet refs/remotes/origin/master; then
+    DEFAULT_BRANCH="master"
+  else
+    echo -e "${RED}❌ Error: Could not detect default branch${NC}"
+    exit 1
+  fi
+fi
+echo -e "${GREEN}   Default branch: ${DEFAULT_BRANCH}${NC}"
+
 # Create main worktree
 echo -e "${BLUE}🌿 Creating main worktree...${NC}"
 MAIN_WORKTREE="${WORKTREE_BASE}/main"
@@ -83,7 +111,7 @@ MAIN_WORKTREE="${WORKTREE_BASE}/main"
 if [ -d "$MAIN_WORKTREE" ]; then
   echo -e "${YELLOW}⚠️  Main worktree already exists, skipping${NC}"
 else
-  git worktree add "$MAIN_WORKTREE" main
+  git worktree add "$MAIN_WORKTREE" "$DEFAULT_BRANCH"
   echo -e "${GREEN}✅ Main worktree created at: ${MAIN_WORKTREE}${NC}"
 fi
 

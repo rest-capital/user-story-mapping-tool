@@ -57,18 +57,52 @@ if git worktree add "$WORKTREE_DIR" "$BRANCH_NAME" 2>/dev/null; then
   echo "   ✅ Checked out existing branch (with auto-tracking if remote)"
 else
   # Simple add failed - branch doesn't exist locally or remotely
-  # Create new branch from current main
-  echo "   Creating new branch from main..."
-  git worktree add -b "$BRANCH_NAME" "$WORKTREE_DIR" main
+  # BUG 99 FIX: Detect default branch instead of hardcoding "main"
+  echo "   Branch doesn't exist, creating new branch..."
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+  if [ -z "$DEFAULT_BRANCH" ]; then
+    # Fallback: try main, then master
+    if git show-ref --verify --quiet refs/remotes/origin/main; then
+      DEFAULT_BRANCH="main"
+    elif git show-ref --verify --quiet refs/remotes/origin/master; then
+      DEFAULT_BRANCH="master"
+    else
+      echo "❌ Error: Could not detect default branch"
+      exit 1
+    fi
+  fi
+  echo "   Creating from ${DEFAULT_BRANCH}..."
+  git worktree add -b "$BRANCH_NAME" "$WORKTREE_DIR" "$DEFAULT_BRANCH"
 fi
 
 # Generate .env file with unique ports
 echo "🌱 Generating .env configuration..."
 cd "$WORKTREE_DIR"
 
-# Generate random ports (40000-60000 range)
-generate_port() {
-  echo $(( 40000 + RANDOM % 20000 ))
+# BUG 100 FIX: Generate unique ports with collision detection
+USED_PORTS=()
+generate_unique_port() {
+  local port
+  local attempts=0
+  while [ $attempts -lt 100 ]; do
+    port=$(( 40000 + RANDOM % 20000 ))
+    # Check if port already assigned
+    local is_used=0
+    for used_port in "${USED_PORTS[@]}"; do
+      if [ "$used_port" = "$port" ]; then
+        is_used=1
+        break
+      fi
+    done
+    if [ $is_used -eq 0 ]; then
+      USED_PORTS+=("$port")
+      echo "$port"
+      return
+    fi
+    attempts=$((attempts + 1))
+  done
+  echo "❌ Error: Could not generate unique port after 100 attempts" >&2
+  exit 1
 }
 
 # Create .env from .env.example template
@@ -85,10 +119,10 @@ if [ -f ".env.example" ]; then
   # BUG 92 FIX: Escape BRANCH_NAME for sed (needs actual branch with slashes for Docker labels!)
   ESCAPED_BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/[&/\]/\\&/g')
 
-  PORT1=$(generate_port)
-  PORT2=$(generate_port)
-  PORT3=$(generate_port)
-  PORT4=$(generate_port)
+  # BUG 100 & 101 FIX: Generate exactly 3 unique ports (not 4)
+  PORT1=$(generate_unique_port)
+  PORT2=$(generate_unique_port)
+  PORT3=$(generate_unique_port)
 
   # Perform replacements (basic implementation)
   sed -i.bak "s/{{ branch() }}/${SANITIZED_BRANCH}/g" .env
@@ -98,7 +132,6 @@ if [ -f ".env.example" ]; then
   sed -i.bak "s/{{ auto_port() }}/${PORT1}/" .env  # First occurrence
   sed -i.bak "s/{{ auto_port() }}/${PORT2}/" .env  # Second occurrence
   sed -i.bak "s/{{ auto_port() }}/${PORT3}/" .env  # Third occurrence
-  sed -i.bak "s/{{ auto_port() }}/${PORT4}/" .env  # Fourth occurrence
   rm .env.bak
 
   echo "✅ Generated .env with unique ports"
