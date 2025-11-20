@@ -119,10 +119,11 @@ if [ -f ".env.example" ]; then
   # BUG 92 FIX: Escape BRANCH_NAME for sed (needs actual branch with slashes for Docker labels!)
   ESCAPED_BRANCH_NAME=$(echo "$BRANCH_NAME" | sed 's/[&/\]/\\&/g')
 
-  # BUG 100 & 101 FIX: Generate exactly 3 unique ports (not 4)
+  # BUG 100 FIX: Generate exactly 4 unique ports with collision detection
   PORT1=$(generate_unique_port)
   PORT2=$(generate_unique_port)
   PORT3=$(generate_unique_port)
+  PORT4=$(generate_unique_port)
 
   # Perform replacements (basic implementation)
   sed -i.bak "s/{{ branch() }}/${SANITIZED_BRANCH}/g" .env
@@ -132,6 +133,7 @@ if [ -f ".env.example" ]; then
   sed -i.bak "s/{{ auto_port() }}/${PORT1}/" .env  # First occurrence
   sed -i.bak "s/{{ auto_port() }}/${PORT2}/" .env  # Second occurrence
   sed -i.bak "s/{{ auto_port() }}/${PORT3}/" .env  # Third occurrence
+  sed -i.bak "s/{{ auto_port() }}/${PORT4}/" .env  # Fourth occurrence
   rm .env.bak
 
   echo "✅ Generated .env with unique ports"

@@ -24,11 +24,13 @@
     "worktree:setup": "bash hack/setup_bare_repository.sh",
     "worktree:create": "bash hack/create_worktree.sh",
     "worktree:remove": "node hack/worktree-remove.js",
-    "worktree:cleanup": "node hack/worktree-cleanup.js",
-    "worktree:cleanup-all": "node hack/worktree-cleanup-all.js",
+    "worktree:cleanup": "node scripts/worktree-cleanup.js",
+    "worktree:cleanup-all": "node scripts/worktree-cleanup-all.js",
     "worktree:refresh": "bash hack/worktree-refresh.sh",
     "worktree:list": "bash hack/worktree-list.sh",
-    "local:start": "bash hack/local-start.sh"
+    "local:start": "node scripts/smart-start.js",
+    "local:stop": "node scripts/smart-stop.js",
+    "local:restart": "node scripts/smart-restart.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

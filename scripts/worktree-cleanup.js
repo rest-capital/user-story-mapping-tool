@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Worktree Cleanup Script
+ * Worktree Cleanup Script (Bare Repository Version)
  *
- * Cleans up Docker resources from removed worktrees:
- * - Orphaned containers (using Docker labels for accurate detection)
- * - Orphaned volumes
+ * RECOMMENDED: Properly removes a worktree including:
+ * - Stopping Docker containers
+ * - Removing Docker volumes
+ * - Removing worktree directory
+ * - Deleting git branch (optional)
  * - Pruning git worktree references
  *
- * Features:
- * - Docker label-based detection (BUG 80 FIX: resolves container naming ambiguity)
- * - Backwards compatibility with old containers without labels
- * - Safe deletion with confirmation prompts
+ * Works with bare repository structure at ~/repos/user-story-mapping-tool.bare
+ *
+ * Usage: pnpm worktree:cleanup <ticket-id>
+ * Example: pnpm worktree:cleanup ENG-123
  */
 
 const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const readline = require('readline');
 
 // Colors for output
@@ -61,273 +66,322 @@ function execCommand(command, options = {}) {
   }
 }
 
-/**
- * Get active worktrees from git
- * BUG 81 FIX: Handle git command failure gracefully
- * BUG 82 FIX: Trim path and branch names
- */
-function getActiveWorktrees() {
+const WORKTREE_BASE = path.join(os.homedir(), 'code', 'user-story-mapping-tool');
+const BARE_REPO = path.join(os.homedir(), 'repos', 'user-story-mapping-tool.bare');
+
+function getWorktreePath(ticketId) {
+  return path.join(WORKTREE_BASE, ticketId);
+}
+
+function getBranchNameFromWorktree(worktreePath) {
+  // Read git worktree info to get branch name
   try {
-    const output = execCommand('git worktree list --porcelain', { silent: true });
-    const worktrees = [];
+    const output = execCommand(`git -C "${BARE_REPO}" worktree list --porcelain`, {
+      silent: true
+    });
 
     const lines = output.split('\n');
     let currentWorktree = null;
+    let branchName = null;
 
     for (const line of lines) {
       if (line.startsWith('worktree ')) {
-        if (currentWorktree) {
-          worktrees.push(currentWorktree);
-        }
-        // BUG 82 FIX: Trim path to remove any trailing whitespace
-        currentWorktree = { path: line.substring(9).trim() };
+        currentWorktree = line.substring(9).trim();
       } else if (line.startsWith('branch ')) {
-        if (currentWorktree) {
-          // BUG 82 FIX: Trim branch name after processing
-          currentWorktree.branch = line.substring(7).replace('refs/heads/', '').trim();
+        if (currentWorktree === worktreePath) {
+          branchName = line.substring(7).replace('refs/heads/', '').trim();
+          break;
         }
       }
     }
 
-    if (currentWorktree) {
-      worktrees.push(currentWorktree);
-    }
-
-    return worktrees;
+    return branchName;
   } catch (error) {
-    // Git command failed (not in repo, git not installed, etc.)
-    // Return empty array so cleanup can continue checking Docker resources
-    log.warn('⚠️  Could not get active worktrees: ' + error.message);
-    return [];
+    return null;
   }
 }
 
-/**
- * Find orphaned Docker containers
- * ENHANCED: Uses Docker labels for perfect branch matching (BUG 80 FIX)
- * CRITICAL FIXES:
- * - BUG 90: Use ||| delimiter to handle pipes in branch names
- * - BUG 91: Use name filter instead of label filter for backwards compatibility
- * - BUG 92: Labels use actual branch names (with slashes) not sanitized names
- * - BUG 93: Trim whitespace from parsed values
- */
-function findOrphanedContainers() {
-  log.step('Scanning for orphaned Docker containers...');
+function getComposeProjectName(branchName) {
+  // Sanitize branch name (replace slashes with hyphens)
+  const sanitized = branchName.replace(/\//g, '-');
+  return `user-story-mapping-${sanitized}`;
+}
 
-  // ENHANCED: Get containers with branch labels (BUG 80 FIX)
-  // Format: "container_name|||branch_label" (BUG 90 FIX: use ||| delimiter to avoid conflicts with branch names)
-  // BUG 91 FIX: Use name filter (not label filter) to include old containers without labels
-  const allContainers = execCommand(
-    'docker ps -a --filter name=user-story-mapping --format "{{.Names}}|||{{.Label \\"worktree.branch\\"}}"',
-    { silent: true, ignoreError: true }
-  );
+function verifyWorktreeExists(worktreePath) {
+  if (!fs.existsSync(worktreePath)) {
+    log.error(`Worktree not found: ${worktreePath}`);
+    log.info('Available worktrees:');
 
-  if (!allContainers || !allContainers.trim()) {
-    log.info('No project containers found');
-    return [];
-  }
-
-  const containerList = allContainers.trim().split('\n');
-  const activeWorktrees = getActiveWorktrees();
-  const orphanedContainers = [];
-
-  for (const entry of containerList) {
-    // BUG 90 FIX: Use ||| delimiter (pipe is valid in branch names though rare)
-    const delimiterIndex = entry.indexOf('|||');
-    if (delimiterIndex === -1) {
-      log.warn(`⚠️  Unexpected format: ${entry}`);
-      continue;
-    }
-    const containerName = entry.substring(0, delimiterIndex).trim(); // BUG 93 FIX: trim whitespace
-    const branchLabel = entry.substring(delimiterIndex + 3).trim(); // BUG 93 FIX: trim whitespace
-
-    // Check if this is a main project container (no branch label or old container without labels)
-    if (!branchLabel || branchLabel === '<no value>') {
-      // Main project container - parse name for backwards compatibility
-      // Main: user-story-mapping-<service>-<number> (e.g., user-story-mapping-backend-1)
-      const afterPrefix = containerName.replace('user-story-mapping-', '');
-      const parts = afterPrefix.split('-');
-      // If only 2 parts (service and number), it's a main container
-      if (parts.length === 2 && /^\d+$/.test(parts[1])) {
-        continue; // Keep main project containers
+    if (fs.existsSync(WORKTREE_BASE)) {
+      const worktrees = fs.readdirSync(WORKTREE_BASE);
+      if (worktrees.length > 0) {
+        worktrees.forEach(wt => log.info(`  - ${wt}`));
+      } else {
+        log.info('  (none)');
       }
+    } else {
+      log.info('  (none)');
+    }
 
-      // Old container without labels - fall back to name-based matching
-      const isOrphaned = !activeWorktrees.some(wt => {
-        if (!wt.branch) return false;
-        const branchSanitized = wt.branch.replace(/\//g, '-');
+    return false;
+  }
+  return true;
+}
 
-        const expectedProjectParts = `user-story-mapping-${branchSanitized}`.split('-');
-        const containerParts = containerName.split('-');
+async function confirmRemoval(ticketId, worktreePath) {
+  log.header('🗑️  Worktree Removal');
 
-        if (containerParts.length < expectedProjectParts.length + 2) return false;
-        if (!/^\d+$/.test(containerParts[containerParts.length - 1])) return false;
+  console.log('This will remove:');
+  log.info(`  Ticket ID: ${ticketId}`);
+  log.info(`  Worktree: ${worktreePath}`);
+  log.info(`  Docker containers and volumes`);
+  console.log('');
 
-        for (let i = 0; i < expectedProjectParts.length; i++) {
-          if (containerParts[i] !== expectedProjectParts[i]) return false;
-        }
+  const answer = await question('Continue with removal? (y/n): ');
+  return answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
+}
 
-        return true;
+function stopDockerServices(worktreePath, projectName) {
+  log.step('Stopping Docker services...');
+
+  try {
+    // Try to stop using docker compose from worktree
+    if (fs.existsSync(worktreePath)) {
+      const result = execCommand('docker compose down -v', {
+        cwd: worktreePath,
+        ignoreError: true,
+        silent: true
       });
 
-      if (isOrphaned) {
-        orphanedContainers.push(containerName);
+      if (result !== null) {
+        log.success('Docker services stopped');
+        return;
       }
-      continue;
     }
 
-    // ENHANCED LOGIC: Use label for perfect branch matching!
-    // BUG 80 RESOLVED: No more ambiguity - label tells us exactly which branch owns this
-    const isOrphaned = !activeWorktrees.some(wt => {
-      if (!wt.branch) return false;
-      // Perfect match: compare actual branch names (no sanitization needed!)
-      return wt.branch === branchLabel;
+    // Also try using project name directly (in case worktree is already modified)
+    // BUG 96 FIX: Quote project name to handle special characters
+    execCommand(`docker compose -p "${projectName}" down -v`, {
+      ignoreError: true,
+      silent: true
     });
 
-    if (isOrphaned) {
-      orphanedContainers.push(containerName);
-    }
+    log.success('Docker services stopped');
+  } catch (error) {
+    log.warn('Could not stop some Docker services (they may not exist)');
   }
-
-  return orphanedContainers;
 }
 
-/**
- * Find orphaned Docker volumes
- */
-function findOrphanedVolumes() {
-  log.step('Scanning for orphaned Docker volumes...');
+function removeDockerVolumes(projectName) {
+  log.step('Removing Docker volumes...');
 
-  const allVolumes = execCommand('docker volume ls -q --filter name=user-story-mapping', {
-    silent: true,
-    ignoreError: true
-  });
-
-  if (!allVolumes || !allVolumes.trim()) {
-    log.info('No project volumes found');
-    return [];
-  }
-
-  const volumeList = allVolumes.trim().split('\n');
-  const activeWorktrees = getActiveWorktrees();
-  const orphanedVolumes = [];
-
-  for (const volumeName of volumeList) {
-    // Volume format: user-story-mapping-<branch>_<service>
-    // Example: user-story-mapping-feature-auth_postgres_data
-    const afterPrefix = volumeName.replace('user-story-mapping-', '');
-
-    // Check if this volume belongs to an active worktree
-    const isOrphaned = !activeWorktrees.some(wt => {
-      if (!wt.branch) return false;
-      const branchSanitized = wt.branch.replace(/\//g, '-');
-      return afterPrefix.startsWith(branchSanitized + '_');
+  try {
+    // Get all volumes for this project
+    // BUG 96 FIX: Quote project name
+    const volumes = execCommand(`docker volume ls -q --filter name="${projectName}"`, {
+      silent: true,
+      ignoreError: true
     });
 
-    if (isOrphaned) {
-      orphanedVolumes.push(volumeName);
-    }
-  }
+    if (volumes && volumes.trim()) {
+      const volumeList = volumes.trim().split('\n');
+      let removedCount = 0;
 
-  return orphanedVolumes;
+      volumeList.forEach(volume => {
+        try {
+          // BUG 96 FIX: Quote volume name
+          execCommand(`docker volume rm "${volume}"`, {
+            silent: true,
+            ignoreError: true
+          });
+          removedCount++;
+        } catch (error) {
+          // Ignore errors for individual volumes
+        }
+      });
+
+      if (removedCount > 0) {
+        log.success(`Removed ${removedCount} Docker volume(s)`);
+      } else {
+        log.info('No Docker volumes to remove');
+      }
+    } else {
+      log.info('No Docker volumes found');
+    }
+  } catch (error) {
+    log.warn('Could not remove some Docker volumes');
+  }
 }
 
-/**
- * Remove orphaned containers
- */
-async function removeOrphanedContainers(containers) {
-  if (containers.length === 0) {
-    log.info('No orphaned containers to remove');
-    return;
+function removeDockerContainers(projectName) {
+  log.step('Removing Docker containers...');
+
+  try {
+    // Get all containers for this project
+    const containers = execCommand(
+      `docker ps -a --filter name="${projectName}" --format "{{.Names}}"`,
+      { silent: true, ignoreError: true }
+    );
+
+    if (containers && containers.trim()) {
+      const containerList = containers.trim().split('\n');
+      let removedCount = 0;
+
+      containerList.forEach(container => {
+        try {
+          // BUG 96 FIX: Quote container name
+          execCommand(`docker rm -f "${container}"`, {
+            silent: true,
+            ignoreError: true
+          });
+          removedCount++;
+        } catch (error) {
+          // Ignore errors for individual containers
+        }
+      });
+
+      if (removedCount > 0) {
+        log.success(`Removed ${removedCount} Docker container(s)`);
+      } else {
+        log.info('No Docker containers to remove');
+      }
+    } else {
+      log.info('No Docker containers found');
+    }
+  } catch (error) {
+    log.warn('Could not remove some Docker containers');
   }
+}
 
-  log.header('Orphaned Containers Found:');
-  containers.forEach(c => console.log(`  - ${c}`));
-  console.log('');
+function removeWorktree(worktreePath) {
+  log.step('Removing git worktree...');
 
-  const answer = await question(`Remove ${containers.length} container(s)? (y/n): `);
-  if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-    log.info('Skipping container cleanup');
-    return;
+  try {
+    // Remove worktree using git from bare repo
+    const result = execCommand(`git -C "${BARE_REPO}" worktree remove "${worktreePath}"`, {
+      ignoreError: true,
+      silent: true
+    });
+
+    // Force remove if still exists
+    if (fs.existsSync(worktreePath)) {
+      execCommand(`git -C "${BARE_REPO}" worktree remove --force "${worktreePath}"`, {
+        ignoreError: true,
+        silent: true
+      });
+    }
+
+    // If directory still exists, remove it manually
+    if (fs.existsSync(worktreePath)) {
+      fs.rmSync(worktreePath, { recursive: true, force: true });
+    }
+
+    log.success('Worktree removed');
+  } catch (error) {
+    log.error('Failed to remove worktree: ' + error.message);
+    throw error;
   }
+}
 
-  log.step('Removing orphaned containers...');
-  for (const container of containers) {
+async function deleteBranch(branchName) {
+  const answer = await question(`Delete branch '${branchName}'? (y/n): `);
+
+  if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+    log.step(`Deleting branch ${branchName}...`);
+
     try {
-      // BUG 97 FIX: Quote container name to handle special characters
-      execCommand(`docker rm -f "${container}"`, { silent: true });
-      log.success(`Removed: ${container}`);
+      // Try normal delete first
+      // BUG 95 FIX: Quote branch name to handle spaces and special characters
+      const result = execCommand(`git -C "${BARE_REPO}" branch -d "${branchName}"`, {
+        ignoreError: true,
+        silent: true
+      });
+
+      if (result !== null) {
+        log.success('Branch deleted');
+        return;
+      }
+
+      // If that fails, ask about force delete
+      const forceAnswer = await question('Branch not fully merged. Force delete? (y/n): ');
+      if (forceAnswer.toLowerCase() === 'y' || forceAnswer.toLowerCase() === 'yes') {
+        execCommand(`git -C "${BARE_REPO}" branch -D "${branchName}"`, { silent: true });
+        log.success('Branch force deleted');
+      } else {
+        log.info('Branch kept');
+      }
     } catch (error) {
-      log.error(`Failed to remove: ${container}`);
+      log.warn('Could not delete branch: ' + error.message);
     }
+  } else {
+    log.info('Branch kept');
   }
 }
 
-/**
- * Remove orphaned volumes
- */
-async function removeOrphanedVolumes(volumes) {
-  if (volumes.length === 0) {
-    log.info('No orphaned volumes to remove');
-    return;
-  }
-
-  log.header('Orphaned Volumes Found:');
-  volumes.forEach(v => console.log(`  - ${v}`));
-  console.log('');
-
-  const answer = await question(`Remove ${volumes.length} volume(s)? (y/n): `);
-  if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-    log.info('Skipping volume cleanup');
-    return;
-  }
-
-  log.step('Removing orphaned volumes...');
-  for (const volume of volumes) {
-    try {
-      // BUG 97 FIX: Quote volume name to handle special characters
-      execCommand(`docker volume rm "${volume}"`, { silent: true });
-      log.success(`Removed: ${volume}`);
-    } catch (error) {
-      log.error(`Failed to remove: ${volume}`);
-    }
-  }
-}
-
-/**
- * Prune git worktree references
- */
 function pruneWorktrees() {
-  log.step('Pruning git worktree references...');
-  execCommand('git worktree prune', { silent: true, ignoreError: true });
+  log.step('Pruning worktree references...');
+  execCommand(`git -C "${BARE_REPO}" worktree prune`, { silent: true });
   log.success('Worktree references pruned');
 }
 
-/**
- * Main cleanup function
- */
 async function main() {
-  log.header('🧹 Worktree Docker Cleanup');
+  const ticketId = process.argv[2];
+
+  if (!ticketId) {
+    log.error('Please provide a ticket ID');
+    console.log('\nUsage: pnpm worktree:cleanup <ticket-id>');
+    console.log('Example: pnpm worktree:cleanup ENG-123');
+    process.exit(1);
+  }
+
+  const worktreePath = getWorktreePath(ticketId);
+
+  // Verify worktree exists
+  if (!verifyWorktreeExists(worktreePath)) {
+    process.exit(1);
+  }
+
+  // Get branch name from worktree
+  const branchName = getBranchNameFromWorktree(worktreePath);
+  if (!branchName) {
+    log.warn('Could not determine branch name from worktree');
+  }
+
+  const projectName = branchName ? getComposeProjectName(branchName) : `user-story-mapping-${ticketId}`;
+
+  // Confirm removal
+  const confirmed = await confirmRemoval(ticketId, worktreePath);
+  if (!confirmed) {
+    log.info('Removal cancelled');
+    process.exit(0);
+  }
 
   try {
-    // Find orphaned resources
-    const orphanedContainers = findOrphanedContainers();
-    const orphanedVolumes = findOrphanedVolumes();
+    // Step 1: Stop Docker services
+    stopDockerServices(worktreePath, projectName);
 
-    // Clean up containers
-    await removeOrphanedContainers(orphanedContainers);
-    console.log('');
+    // Step 2: Remove Docker containers (in case down didn't work)
+    removeDockerContainers(projectName);
 
-    // Clean up volumes
-    await removeOrphanedVolumes(orphanedVolumes);
-    console.log('');
+    // Step 3: Remove Docker volumes
+    removeDockerVolumes(projectName);
 
-    // Prune worktree references
+    // Step 4: Remove worktree
+    removeWorktree(worktreePath);
+
+    // Step 5: Optionally delete branch
+    if (branchName) {
+      await deleteBranch(branchName);
+    }
+
+    // Step 6: Prune worktree references
     pruneWorktrees();
 
-    log.header('✅ Cleanup Complete!');
+    log.header('✅ Worktree removal complete!');
+    console.log('');
+
   } catch (error) {
-    log.error(`Cleanup failed: ${error.message}`);
+    log.error(`\nRemoval failed: ${error.message}`);
     process.exit(1);
   } finally {
     rl.close();
@@ -338,9 +392,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = {
-  main,
-  getActiveWorktrees,
-  findOrphanedContainers,
-  findOrphanedVolumes
-};
+module.exports = { main };
