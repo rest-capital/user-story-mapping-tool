@@ -4,8 +4,9 @@
  * This file is executed once per worker before tests (configured in jest-e2e.json)
  *
  * PARALLEL ARCHITECTURE:
- * - 4 workers run simultaneously (maxWorkers: 4)
- * - Each worker has its own isolated database (test_db_1, test_db_2, test_db_3, test_db_4)
+ * - Workers scale with CPU cores (maxWorkers: "50%")
+ * - Each worker has its own isolated database (test_db_1, test_db_2, ...)
+ * - Example: 8-core system = 4 workers, 16-core = 8 workers
  * - Worker ID determines which database to use
  * - Tests within each worker run sequentially
  * - Database is wiped before each test in that worker
@@ -27,7 +28,7 @@ dotenv.config({ path: path.join(__dirname, '../.env.test') });
 
 /**
  * Get worker-specific database name
- * Jest assigns JEST_WORKER_ID as '1', '2', '3', '4' for parallel workers
+ * Jest assigns JEST_WORKER_ID as '1', '2', '3', ... based on maxWorkers setting
  * We route each worker to its own database for complete isolation
  */
 const getWorkerDatabaseName = (): string => {
