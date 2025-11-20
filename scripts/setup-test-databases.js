@@ -233,8 +233,8 @@ async function cleanupOrphanedDatabases(orphaned) {
       const terminateCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()"`;
       execCommand(terminateCmd, { silent: true, ignoreError: true });
 
-      // Small delay
-      execSync('sleep 0.1', { stdio: 'ignore' });
+      // Wait for connections to fully terminate (matches docker-cleanup.js timing)
+      execSync('sleep 0.5', { stdio: 'ignore' });
 
       // Drop the database
       const dropCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -c "DROP DATABASE IF EXISTS ${dbName}"`;
@@ -260,16 +260,15 @@ function createDatabase(dbName, isRecreate) {
   const action = isRecreate ? 'Recreating' : 'Creating';
   log.step(`${action} database: ${dbName}`);
 
-  // Terminate active connections first (prevents "database is being accessed" errors)
-  if (isRecreate) {
-    const terminateCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()"`;
-    execCommand(terminateCmd, { silent: true, ignoreError: true });
+  // Always terminate active connections first (prevents "database is being accessed" errors)
+  // This is safe even if database doesn't exist - the query simply returns no rows
+  const terminateCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${dbName}' AND pid <> pg_backend_pid()"`;
+  execCommand(terminateCmd, { silent: true, ignoreError: true });
 
-    // Small delay to ensure connections are terminated
-    execSync('sleep 0.1', { stdio: 'ignore' });
-  }
+  // Wait for connections to fully terminate (matches docker-cleanup.js timing)
+  execSync('sleep 0.5', { stdio: 'ignore' });
 
-  // Drop if exists (for recreate), then create
+  // Drop if exists, then create
   const sql = `
     DROP DATABASE IF EXISTS ${dbName};
     CREATE DATABASE ${dbName};
