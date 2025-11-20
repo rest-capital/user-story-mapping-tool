@@ -128,7 +128,8 @@ function stopDockerServices(worktreePath, projectName) {
     }
 
     // Also try using project name directly (in case worktree is already modified)
-    execCommand(`docker compose -p ${projectName} down -v`, {
+    // BUG 96 FIX: Quote project name to handle special characters
+    execCommand(`docker compose -p "${projectName}" down -v`, {
       ignoreError: true,
       silent: true
     });
@@ -144,7 +145,8 @@ function removeDockerVolumes(projectName) {
 
   try {
     // Get all volumes for this project
-    const volumes = execCommand(`docker volume ls -q --filter name=${projectName}`, {
+    // BUG 96 FIX: Quote project name
+    const volumes = execCommand(`docker volume ls -q --filter name="${projectName}"`, {
       silent: true,
       ignoreError: true
     });
@@ -155,7 +157,8 @@ function removeDockerVolumes(projectName) {
 
       volumeList.forEach(volume => {
         try {
-          execCommand(`docker volume rm ${volume}`, {
+          // BUG 96 FIX: Quote volume name
+          execCommand(`docker volume rm "${volume}"`, {
             silent: true,
             ignoreError: true
           });
@@ -194,7 +197,8 @@ function removeDockerContainers(projectName) {
 
       containerList.forEach(container => {
         try {
-          execCommand(`docker rm -f ${container}`, {
+          // BUG 96 FIX: Quote container name
+          execCommand(`docker rm -f "${container}"`, {
             silent: true,
             ignoreError: true
           });
@@ -255,7 +259,8 @@ async function deleteBranch(branchName) {
 
     try {
       // Try normal delete first
-      const result = execCommand(`git branch -d ${branchName}`, {
+      // BUG 95 FIX: Quote branch name to handle spaces and special characters
+      const result = execCommand(`git branch -d "${branchName}"`, {
         ignoreError: true,
         silent: true
       });
@@ -268,7 +273,7 @@ async function deleteBranch(branchName) {
       // If that fails, ask about force delete
       const forceAnswer = await question('Branch not fully merged. Force delete? (y/n): ');
       if (forceAnswer.toLowerCase() === 'y' || forceAnswer.toLowerCase() === 'yes') {
-        execCommand(`git branch -D ${branchName}`, { silent: true });
+        execCommand(`git branch -D "${branchName}"`, { silent: true });
         log.success('Branch force deleted');
       } else {
         log.info('Branch kept');

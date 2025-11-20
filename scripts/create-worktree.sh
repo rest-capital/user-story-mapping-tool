@@ -72,7 +72,12 @@ if [ -f ".env.example" ]; then
 
     # Generate unique ports (avoid conflicts with main and other worktrees)
     # Use a hash of the branch name to generate consistent port numbers
-    HASH=$(echo -n "$BRANCH_NAME" | md5sum | head -c 4)
+    # BUG 94 FIX: macOS uses 'md5 -q', Linux uses 'md5sum'
+    if command -v md5sum >/dev/null 2>&1; then
+      HASH=$(echo -n "$BRANCH_NAME" | md5sum | head -c 4)
+    else
+      HASH=$(echo -n "$BRANCH_NAME" | md5 -q | head -c 4)
+    fi
     PORT_OFFSET=$((0x$HASH % 9000 + 1000))  # Port range: 1000-9999
     BACKEND_PORT=$((3000 + PORT_OFFSET))
 

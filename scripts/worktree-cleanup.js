@@ -254,7 +254,8 @@ async function removeOrphanedContainers(containers) {
   log.step('Removing orphaned containers...');
   for (const container of containers) {
     try {
-      execCommand(`docker rm -f ${container}`, { silent: true });
+      // BUG 97 FIX: Quote container name to handle special characters
+      execCommand(`docker rm -f "${container}"`, { silent: true });
       log.success(`Removed: ${container}`);
     } catch (error) {
       log.error(`Failed to remove: ${container}`);
@@ -284,7 +285,8 @@ async function removeOrphanedVolumes(volumes) {
   log.step('Removing orphaned volumes...');
   for (const volume of volumes) {
     try {
-      execCommand(`docker volume rm ${volume}`, { silent: true });
+      // BUG 97 FIX: Quote volume name to handle special characters
+      execCommand(`docker volume rm "${volume}"`, { silent: true });
       log.success(`Removed: ${volume}`);
     } catch (error) {
       log.error(`Failed to remove: ${volume}`);
