@@ -18,6 +18,15 @@ function question(prompt) {
   });
 }
 
+function findRepoRoot() {
+  try {
+    return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+  } catch (error) {
+    console.error('❌ Not in a git repository');
+    process.exit(1);
+  }
+}
+
 async function main() {
   console.log('🌿 Worktree Creation - Create New Worktree\n');
 
@@ -46,10 +55,13 @@ async function main() {
 
   rl.close();
 
+  // BUG 102 FIX: Find repo root to handle running from any directory
+  const repoRoot = findRepoRoot();
+
   // Create worktree
   console.log('\n📦 Creating worktree...\n');
   try {
-    execSync(`./hack/create_worktree.sh "${ticketId}" "${branchName}"`, {
+    execSync(`bash "${repoRoot}/hack/create_worktree.sh" "${ticketId}" "${branchName}"`, {
       stdio: 'inherit'
     });
   } catch (error) {
