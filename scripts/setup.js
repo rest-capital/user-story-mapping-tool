@@ -11,7 +11,7 @@
  * - Sets up test databases
  */
 
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -55,9 +55,21 @@ function execCommand(command, errorMessage) {
   }
 }
 
+function commandExists(command) {
+  try {
+    // Cross-platform command checking
+    const testCommand = process.platform === 'win32'
+      ? `where ${command}`
+      : `which ${command}`;
+    execSync(testCommand, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function checkCommand(command, name) {
-  const result = execCommand(`which ${command}`, null);
-  if (result) {
+  if (commandExists(command)) {
     log(`✅ ${name} is installed`, 'green');
     return true;
   } else {
@@ -72,6 +84,33 @@ function askQuestion(question) {
       resolve(answer.toLowerCase().trim());
     });
   });
+}
+
+async function checkProjectRoot() {
+  const packageJsonPath = path.join(process.cwd(), 'package.json');
+  const backendPath = path.join(process.cwd(), 'apps/backend');
+
+  if (!fs.existsSync(packageJsonPath)) {
+    log('❌ package.json not found. Are you in the project root?', 'red');
+    log('   Please cd to the project root and run this script again.', 'yellow');
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(backendPath)) {
+    log('❌ apps/backend directory not found.', 'red');
+    log('   This script must be run from the monorepo root.', 'yellow');
+    process.exit(1);
+  }
+
+  // Check if package.json has the right name
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  if (packageJson.name !== 'user-story-mapping-tool') {
+    log('⚠️  Warning: package.json name doesn\'t match expected project', 'yellow');
+    const answer = await askQuestion('Continue anyway? (y/n):');
+    if (answer !== 'y' && answer !== 'yes') {
+      process.exit(0);
+    }
+  }
 }
 
 async function checkPrerequisites() {
@@ -111,6 +150,16 @@ async function checkPrerequisites() {
 
 async function installDependencies() {
   logHeader('Step 2/7: Installing Dependencies');
+
+  // Check if node_modules exists
+  if (fs.existsSync('node_modules')) {
+    log('ℹ️  node_modules already exists', 'cyan');
+    const answer = await askQuestion('Reinstall dependencies? (y/n):');
+    if (answer !== 'y' && answer !== 'yes') {
+      log('⏭️  Skipping dependency installation', 'yellow');
+      return;
+    }
+  }
 
   log('Running: pnpm install', 'cyan');
   const result = execCommand('pnpm install', 'Failed to install dependencies');
@@ -154,15 +203,18 @@ function extractSupabaseKeys() {
     process.exit(1);
   }
 
-  // Extract keys from status output
+  // Extract keys from status output with better error handling
   const anonKeyMatch = status.match(/anon key: (.+)/);
   const serviceKeyMatch = status.match(/service_role key: (.+)/);
   const apiUrlMatch = status.match(/API URL: (.+)/);
   const dbUrlMatch = status.match(/DB URL: (.+)/);
 
   if (!anonKeyMatch || !serviceKeyMatch) {
-    log('❌ Failed to extract Supabase keys', 'red');
-    log('Please run: supabase status', 'yellow');
+    log('❌ Failed to extract Supabase keys from output', 'red');
+    log('\nSupabase status output:', 'yellow');
+    console.log(status);
+    log('\nPlease run: supabase status', 'yellow');
+    log('And verify the output contains "anon key" and "service_role key"', 'yellow');
     process.exit(1);
   }
 
@@ -188,6 +240,13 @@ async function createEnvFiles(keys) {
     const answer = await askQuestion('.env.local already exists. Overwrite? (y/n):');
     if (answer !== 'y' && answer !== 'yes') {
       log('⏭️  Skipping .env.local creation', 'yellow');
+      log('⚠️  Warning: Migrations may fail without correct .env.local', 'yellow');
+
+      const continueAnswer = await askQuestion('Continue anyway? (y/n):');
+      if (continueAnswer !== 'y' && continueAnswer !== 'yes') {
+        log('\n❌ Setup cancelled. Run again to overwrite .env.local', 'red');
+        process.exit(0);
+      }
       return;
     }
   }
@@ -231,13 +290,13 @@ API_PREFIX=api
   }
 }
 
-async function runPrismaMigrations() {
+async function runPrismaMigrations(keys) {
   logHeader('Step 5/7: Running Database Migrations');
 
   log('Applying Prisma migrations...', 'cyan');
 
-  // Set DATABASE_URL for migrations
-  const dbUrl = 'postgresql://postgres:postgres@localhost:54322/postgres';
+  // Use extracted DATABASE_URL instead of hardcoded
+  const dbUrl = keys.dbUrl || 'postgresql://postgres:postgres@localhost:54322/postgres';
   const result = execCommand(
     `cd apps/backend && DATABASE_URL="${dbUrl}" npx prisma migrate deploy`,
     'Failed to apply migrations'
@@ -247,6 +306,7 @@ async function runPrismaMigrations() {
     log('\nTip: If migrations fail, try:', 'yellow');
     log('  1. Run: cd apps/backend && npx prisma migrate dev', 'yellow');
     log('  2. Or: cd apps/backend && npx prisma db push', 'yellow');
+    log('  3. Check that Supabase is running: supabase status', 'yellow');
     process.exit(1);
   }
 
@@ -274,6 +334,14 @@ async function setupTestDatabases() {
     log('Setting up test databases...', 'cyan');
     log('(This will create test_db_1, test_db_2, etc.)', 'yellow');
 
+    // Check if script exists
+    const scriptPath = path.join(process.cwd(), 'scripts/setup-test-databases.js');
+    if (!fs.existsSync(scriptPath)) {
+      log('⚠️  Test database setup script not found', 'yellow');
+      log('   Expected: scripts/setup-test-databases.js', 'yellow');
+      return;
+    }
+
     const result = execCommand(
       'node scripts/setup-test-databases.js',
       'Failed to set up test databases'
@@ -296,20 +364,31 @@ async function startServices() {
   const answer = await askQuestion('Start backend services now? (y/n):');
 
   if (answer === 'y' || answer === 'yes') {
-    log('\nStarting services...', 'cyan');
+    log('\n✅ Starting services in background...', 'cyan');
     log('Backend will be available at: http://localhost:3000', 'yellow');
     log('API docs will be available at: http://localhost:3000/api/docs', 'yellow');
-    log('\nPress Ctrl+C to stop services\n', 'yellow');
+    log('Supabase Studio: http://localhost:54323\n', 'yellow');
 
-    // Use spawn to show live output
-    const child = spawnSync('pnpm', ['local:start'], {
+    // Use spawn (async) instead of spawnSync to avoid blocking
+    const child = spawn('pnpm', ['local:start'], {
+      detached: true,
       stdio: 'inherit',
       shell: true,
     });
 
-    if (child.status !== 0) {
-      log('\n⚠️  Services failed to start. Try manually with: pnpm local:start', 'yellow');
+    // Give it a moment to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Check if still running
+    try {
+      process.kill(child.pid, 0);
+      log('✅ Services starting... Use "pnpm local:stop" to stop them', 'green');
+    } catch {
+      log('⚠️  Services may have failed to start. Try manually with: pnpm local:start', 'yellow');
     }
+
+    // Don't wait for child process
+    child.unref();
   } else {
     log('\n⏭️  Skipping service startup', 'yellow');
     log('   Start later with: pnpm local:start', 'cyan');
@@ -344,20 +423,26 @@ async function displaySummary() {
 
 async function main() {
   try {
-    console.clear();
+    // Clear console if supported
+    if (process.stdout.isTTY) {
+      console.clear();
+    }
+
     log('🚀 User Story Mapping Tool - First-Time Setup', 'bright');
     log('This script will set up your development environment\n', 'cyan');
 
+    await checkProjectRoot();
     await checkPrerequisites();
     await installDependencies();
     const keys = await setupSupabase();
     await createEnvFiles(keys);
-    await runPrismaMigrations();
+    await runPrismaMigrations(keys);
     await setupTestDatabases();
     await startServices();
     await displaySummary();
 
     rl.close();
+    process.exit(0);
   } catch (error) {
     log('\n❌ Setup failed with error:', 'red');
     console.error(error);
