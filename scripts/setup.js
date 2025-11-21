@@ -332,9 +332,9 @@ function extractSupabaseKeys(existingStatus = null) {
   }
 
   // Extract keys from status output with better error handling
-  const anonKeyMatch = status.match(/anon key: (.+)/);
-  const serviceKeyMatch = status.match(/service_role key: (.+)/);
-  // FIX Bug #1: Use \S+ instead of .+ to stop at whitespace (avoid capturing trailing content)
+  // FIX Bug #2: Use \S+ for consistency (stops at whitespace, avoids trailing content)
+  const anonKeyMatch = status.match(/anon key: (\S+)/);
+  const serviceKeyMatch = status.match(/service_role key: (\S+)/);
   const apiUrlMatch = status.match(/API URL: (\S+)/);
   const dbUrlMatch = status.match(/DB URL: (\S+)/);
 
@@ -411,10 +411,12 @@ function extractSupabaseKeys(existingStatus = null) {
   }
 
   // Validate DB URL has basic PostgreSQL structure: protocol://[user[:password]@]host[:port]/database
-  if (!keys.dbUrl.match(/^postgres(ql)?:\/\/[^\/\s]+\/\w+/)) {
+  // FIX Bug #1: Use [\w-]+ instead of \w+ to support hyphens in database names
+  if (!keys.dbUrl.match(/^postgres(ql)?:\/\/[^\/\s]+\/[\w-]+/)) {
     log('❌ DB URL is malformed - missing host or database name', 'red');
     log(`   URL: ${keys.dbUrl}`, 'red');
     log('   Expected format: postgresql://user:pass@host:port/database', 'yellow');
+    log('   Note: Database names can contain letters, digits, underscores, and hyphens', 'yellow');
     process.exit(1);
   }
 
