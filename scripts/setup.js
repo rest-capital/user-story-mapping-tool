@@ -411,12 +411,12 @@ function extractSupabaseKeys(existingStatus = null) {
   }
 
   // Validate DB URL has basic PostgreSQL structure: protocol://[user[:password]@]host[:port]/database
-  // FIX Bug #1: Use [\w-]+ instead of \w+ to support hyphens in database names
-  if (!keys.dbUrl.match(/^postgres(ql)?:\/\/[^\/\s]+\/[\w-]+/)) {
+  // PostgreSQL database names must start with letter or underscore, then can contain word chars or hyphens
+  if (!keys.dbUrl.match(/^postgres(ql)?:\/\/[^\/\s]+\/[a-zA-Z_][\w-]*/)) {
     log('❌ DB URL is malformed - missing host or database name', 'red');
     log(`   URL: ${keys.dbUrl}`, 'red');
     log('   Expected format: postgresql://user:pass@host:port/database', 'yellow');
-    log('   Note: Database names can contain letters, digits, underscores, and hyphens', 'yellow');
+    log('   Note: Database names must start with letter or underscore', 'yellow');
     process.exit(1);
   }
 
