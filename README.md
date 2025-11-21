@@ -557,7 +557,6 @@ user-story-mapping-tool/
 │       │   │   ├── comments/      # Comments
 │       │   │   ├── tags/          # Tags
 │       │   │   ├── personas/      # Personas
-│       │   │   ├── user-stories/  # Empty placeholder (TODO)
 │       │   │   ├── health/        # Health check
 │       │   │   ├── prisma/        # Prisma service
 │       │   │   └── supabase/      # Supabase client

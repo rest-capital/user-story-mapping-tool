@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HealthModule } from './modules/health';
-import { UserStoriesModule } from './modules/user-stories/user-stories.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SupabaseModule } from './modules/supabase/supabase.module';
 import { PrismaModule } from './modules/prisma';
@@ -32,7 +31,6 @@ import { StoryLinksModule } from './modules/story-links/story-links.module';
     PersonasModule,
     CommentsModule,
     StoryLinksModule,
-    UserStoriesModule,
   ],
 })
 export class AppModule {}
