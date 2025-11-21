@@ -27,6 +27,7 @@
     "supabase:status": "supabase status",
     "worktree:setup": "bash hack/setup_bare_repository.sh",
     "worktree:create": "bash hack/create_worktree.sh",
+    "worktree:wizard": "node scripts/worktree-workflow.js",
     "worktree:remove": "node scripts/worktree-remove.js",
     "worktree:cleanup": "node scripts/worktree-cleanup.js",
     "worktree:cleanup-all": "node scripts/worktree-cleanup-all.js",
