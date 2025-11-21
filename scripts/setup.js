@@ -87,21 +87,35 @@ function askQuestion(question) {
   });
 }
 
-function isPortAvailable(port) {
+function isPortAvailable(port, timeout = 5000) {
   return new Promise((resolve) => {
     const server = net.createServer();
+    let isResolved = false;
+
+    // Timeout handler
+    const timer = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        server.close();
+        resolve(false); // Treat timeout as unavailable
+      }
+    }, timeout);
 
     server.once('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        resolve(false);
-      } else {
-        resolve(true);
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timer);
+        resolve(false); // FIX: Any error means port is not available
       }
     });
 
     server.once('listening', () => {
-      server.close();
-      resolve(true);
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timer);
+        server.close();
+        resolve(true);
+      }
     });
 
     server.listen(port);
@@ -109,12 +123,23 @@ function isPortAvailable(port) {
 }
 
 function isProcessRunning(pid) {
+  if (!pid) return false; // Handle undefined/null pid
+
   try {
     // Platform-specific check
     if (process.platform === 'win32') {
-      // Windows: Use tasklist
-      const result = execSync(`tasklist /FI "PID eq ${pid}"`, { encoding: 'utf8' });
-      return result.includes(String(pid));
+      // Windows: Use tasklist with better parsing
+      const result = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: 'utf8' });
+      // Check if result contains a valid process line (not error message)
+      // Valid line format: "pnpm.exe                    12345 Console                    1     50,000 K"
+      const lines = result.trim().split('\n');
+      for (const line of lines) {
+        // Check if line starts with a process name and contains the PID
+        if (line.includes('.exe') && line.includes(String(pid))) {
+          return true;
+        }
+      }
+      return false;
     } else {
       // Unix/Mac: Use kill with signal 0
       process.kill(pid, 0);
@@ -174,14 +199,21 @@ async function checkProjectRoot() {
     }
   }
 
-  // Check if package.json has the right name
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-  if (packageJson.name !== 'user-story-mapping-tool') {
-    log('⚠️  Warning: package.json name doesn\'t match expected project', 'yellow');
-    const answer = await askQuestion('Continue anyway? (y/n):');
-    if (answer !== 'y' && answer !== 'yes') {
-      process.exit(0);
+  // Check if package.json has the right name (with error handling)
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    if (packageJson.name !== 'user-story-mapping-tool') {
+      log('⚠️  Warning: package.json name doesn\'t match expected project', 'yellow');
+      const answer = await askQuestion('Continue anyway? (y/n):');
+      if (answer !== 'y' && answer !== 'yes') {
+        process.exit(0);
+      }
     }
+  } catch (error) {
+    log('❌ Failed to parse package.json', 'red');
+    log('   The file may be corrupted or contain invalid JSON.', 'yellow');
+    log(`   Error: ${error.message}`, 'red');
+    process.exit(1);
   }
 }
 
@@ -217,10 +249,11 @@ async function checkPrerequisites() {
   }
   log('✅ Docker is running', 'green');
 
-  // Check if port 3000 is available
+  // Check if port 3000 is available (with timeout)
+  log('Checking if port 3000 is available...', 'cyan');
   const portAvailable = await isPortAvailable(3000);
   if (!portAvailable) {
-    log('⚠️  Warning: Port 3000 is already in use', 'yellow');
+    log('⚠️  Warning: Port 3000 is already in use or unavailable', 'yellow');
     log('   The backend may fail to start if another service is using this port.', 'yellow');
     const answer = await askQuestion('Continue anyway? (y/n):');
     if (answer !== 'y' && answer !== 'yes') {
@@ -379,12 +412,14 @@ API_PREFIX=api
   if (fs.existsSync(backendEnvTest)) {
     const existingEnvTest = fs.readFileSync(backendEnvTest, 'utf8');
 
-    // Check if keys look like demo keys (JWT format check)
-    const currentAnonMatch = existingEnvTest.match(/SUPABASE_ANON_KEY="?(.+?)"?$/m);
-    const currentServiceMatch = existingEnvTest.match(/SUPABASE_SERVICE_ROLE_KEY="?(.+?)"?$/m);
+    // FIX: More robust regex - match quoted or unquoted values until end of line
+    const currentAnonMatch = existingEnvTest.match(/SUPABASE_ANON_KEY=["']?([^"'\n]+)["']?/);
+    const currentServiceMatch = existingEnvTest.match(/SUPABASE_SERVICE_ROLE_KEY=["']?([^"'\n]+)["']?/);
 
     const shouldUpdate =
       existingEnvTest.includes('supabase-demo') ||
+      !currentAnonMatch ||
+      !currentServiceMatch ||
       (currentAnonMatch && !validateJwtKey(currentAnonMatch[1])) ||
       (currentServiceMatch && !validateJwtKey(currentServiceMatch[1]));
 
@@ -435,11 +470,14 @@ async function runPrismaMigrations(keys) {
     process.exit(1);
   }
 
-  // Use cwd option instead of cd command (handles spaces in paths)
+  // FIX: Use env option instead of inline syntax (cross-platform compatible)
   const result = execCommand(
-    `DATABASE_URL="${keys.dbUrl}" npx prisma migrate deploy`,
+    'npx prisma migrate deploy',
     'Failed to apply migrations',
-    { cwd: path.join(process.cwd(), 'apps/backend') }
+    {
+      cwd: path.join(process.cwd(), 'apps/backend'),
+      env: { ...process.env, DATABASE_URL: keys.dbUrl }
+    }
   );
 
   if (!result) {
@@ -510,24 +548,36 @@ async function startServices() {
     log('API docs will be available at: http://localhost:3000/api/docs', 'yellow');
     log('Supabase Studio: http://localhost:54323\n', 'yellow');
 
-    // Use spawn (async) with proper stdio handling for detached process
-    const child = spawn('pnpm', ['local:start'], {
-      detached: true,
-      stdio: 'ignore',  // FIX: Use 'ignore' instead of 'inherit' for detached processes
-      shell: true,
-    });
+    try {
+      // Use spawn (async) with proper stdio handling for detached process
+      const child = spawn('pnpm', ['local:start'], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true,
+      });
 
-    // Don't wait for child process
-    child.unref();
+      // FIX: Check if spawn succeeded before using child.pid
+      if (!child.pid) {
+        log('⚠️  Failed to start services. Try manually with: pnpm local:start', 'yellow');
+        return;
+      }
 
-    // Give it a moment to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
+      // Don't wait for child process
+      child.unref();
 
-    // Check if process is still running (platform-specific)
-    if (isProcessRunning(child.pid)) {
-      log('✅ Services starting... Use "pnpm local:stop" to stop them', 'green');
-    } else {
-      log('⚠️  Services may have failed to start. Try manually with: pnpm local:start', 'yellow');
+      // Give it a moment to start
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Check if process is still running (platform-specific)
+      if (isProcessRunning(child.pid)) {
+        log('✅ Services starting... Use "pnpm local:stop" to stop them', 'green');
+      } else {
+        log('⚠️  Services may have failed to start. Try manually with: pnpm local:start', 'yellow');
+      }
+    } catch (error) {
+      log('⚠️  Error starting services:', 'yellow');
+      log(`   ${error.message}`, 'red');
+      log('   Try manually with: pnpm local:start', 'yellow');
     }
   } else {
     log('\n⏭️  Skipping service startup', 'yellow');
@@ -580,16 +630,14 @@ async function main() {
     await setupTestDatabases();
     await startServices();
     await displaySummary();
-
-    // Close readline and let process exit naturally
-    rl.close();
   } catch (error) {
     log('\n❌ Setup failed with error:', 'red');
     console.error(error);
     log('\nPlease check the error message above and try again.', 'yellow');
     log('If the problem persists, refer to README.md for manual setup.', 'yellow');
+  } finally {
+    // FIX: Always close readline in finally block
     rl.close();
-    process.exit(1);
   }
 }
 
