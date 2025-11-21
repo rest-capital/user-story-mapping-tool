@@ -1,0 +1,117 @@
+# Supabase Local Development Configuration
+# Created for user-story-mapping-tool
+# This file configures local Supabase services for development and testing
+
+# A string used to distinguish different Supabase projects on the same host
+project_id = "user-story-mapping-tool"
+
+# API Server Configuration
+[api]
+enabled = true
+# Port to use for the API URL
+port = 54321
+# Postgres schemas to expose in your API
+schemas = ["public", "storage", "graphql_public"]
+# Extra schemas to add to the search_path of every request
+extra_search_path = ["public", "extensions"]
+# The maximum number of rows returns from a view, table, or stored procedure
+max_rows = 1000
+
+# Database Configuration
+[db]
+# Port to use for the local database URL
+port = 54322
+# The database major version to use
+major_version = 15
+
+# Studio Configuration (Supabase Web UI)
+[studio]
+enabled = true
+# Port to use for Supabase Studio
+port = 54323
+
+# Authentication Configuration
+[auth]
+enabled = true
+# The base URL of your website
+site_url = "http://localhost:3000"
+# A list of *exact* URLs that auth providers are permitted to redirect to post authentication
+additional_redirect_urls = ["http://localhost:3000"]
+# How long tokens are valid for, in seconds
+jwt_expiry = 3600
+# Allow/disallow new user signups to your project
+enable_signup = true
+
+# Email Configuration (local dev - no confirmations needed)
+[auth.email]
+# Allow/disallow new user signups via email to your project
+enable_signup = true
+# If enabled, a user will be required to confirm any email change on both the old, and new email addresses
+double_confirm_changes = true
+# If enabled, users need to confirm their email address before signing in
+enable_confirmations = false
+
+# Storage Configuration
+[storage]
+enabled = true
+# The maximum file size allowed (e.g. "5MB", "500KB")
+file_size_limit = "50MiB"
+
+# Inbucket Configuration (local email testing)
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+# PostgREST Configuration
+[auth.external.apple]
+enabled = false
+
+[auth.external.azure]
+enabled = false
+
+[auth.external.bitbucket]
+enabled = false
+
+[auth.external.discord]
+enabled = false
+
+[auth.external.facebook]
+enabled = false
+
+[auth.external.github]
+enabled = false
+
+[auth.external.gitlab]
+enabled = false
+
+[auth.external.google]
+enabled = false
+
+[auth.external.keycloak]
+enabled = false
+
+[auth.external.linkedin]
+enabled = false
+
+[auth.external.notion]
+enabled = false
+
+[auth.external.twitch]
+enabled = false
+
+[auth.external.twitter]
+enabled = false
+
+[auth.external.slack]
+enabled = false
+
+[auth.external.spotify]
+enabled = false
+
+[auth.external.workos]
+enabled = false
+
+[auth.external.zoom]
+enabled = false
