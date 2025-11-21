@@ -297,7 +297,8 @@ async function setupSupabase() {
   // Check for multiple indicators that Supabase is running and returning full status
   if (status && status.includes('API URL:') && status.includes('DB URL:')) {
     log('✅ Supabase is already running', 'green');
-    return extractSupabaseKeys();
+    // FIX Bug #3: Pass status string to avoid redundant execution
+    return extractSupabaseKeys(status);
   }
 
   log('Starting Supabase...', 'cyan');
@@ -315,10 +316,11 @@ async function setupSupabase() {
   return extractSupabaseKeys();
 }
 
-function extractSupabaseKeys() {
+function extractSupabaseKeys(existingStatus = null) {
   log('\nExtracting Supabase keys...', 'cyan');
 
-  const status = execCommand('supabase status', 'Failed to get Supabase status');
+  // FIX Bug #3: Use provided status if available, otherwise fetch it
+  const status = existingStatus || execCommand('supabase status', 'Failed to get Supabase status');
   if (!status) {
     log('\nTip: If Supabase status fails, try:', 'yellow');
     log('  1. Check if Supabase is running: supabase status', 'yellow');
@@ -367,7 +369,35 @@ function extractSupabaseKeys() {
     dbUrl: dbUrlMatch[1].trim(),
   };
 
-  // Validate extracted keys
+  // FIX Bug #1: Validate trimmed values are non-empty (whitespace-only check)
+  if (!keys.apiUrl || keys.apiUrl.length === 0) {
+    log('❌ Extracted API URL is empty after trimming whitespace', 'red');
+    log('   This indicates Supabase status returned whitespace-only value', 'red');
+    process.exit(1);
+  }
+
+  if (!keys.dbUrl || keys.dbUrl.length === 0) {
+    log('❌ Extracted DB URL is empty after trimming whitespace', 'red');
+    log('   This indicates Supabase status returned whitespace-only value', 'red');
+    process.exit(1);
+  }
+
+  // FIX Bug #2: Validate URL format (similar to JWT validation)
+  if (!keys.apiUrl.startsWith('http://') && !keys.apiUrl.startsWith('https://')) {
+    log('❌ Extracted API URL does not appear to be a valid HTTP(S) URL', 'red');
+    log(`   URL: ${keys.apiUrl}`, 'red');
+    log('   Expected format: http://localhost:54321 or https://...', 'yellow');
+    process.exit(1);
+  }
+
+  if (!keys.dbUrl.startsWith('postgresql://') && !keys.dbUrl.startsWith('postgres://')) {
+    log('❌ Extracted DB URL does not appear to be a valid PostgreSQL URL', 'red');
+    log(`   URL: ${keys.dbUrl}`, 'red');
+    log('   Expected format: postgresql://postgres:postgres@localhost:54322/postgres', 'yellow');
+    process.exit(1);
+  }
+
+  // Validate JWT keys
   if (!validateJwtKey(keys.anonKey)) {
     log('❌ Extracted anon key does not appear to be a valid JWT', 'red');
     log(`   Key: ${keys.anonKey.substring(0, 50)}...`, 'red');
