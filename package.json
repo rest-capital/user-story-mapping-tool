@@ -4,6 +4,7 @@
   "private": true,
   "description": "User Story Mapping Tool - Monorepo",
   "scripts": {
+    "setup": "node scripts/setup.js",
     "build": "pnpm --filter @user-story-mapping/backend build",
     "dev": "pnpm --filter @user-story-mapping/backend dev",
     "start": "pnpm --filter @user-story-mapping/backend start",

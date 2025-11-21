@@ -45,23 +45,54 @@ docker --version
 
 ## First Time Setup
 
-### 1. Clone the Repository
+### Quick Start (Automated) ⚡
+
+**One command to set up everything:**
+
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd user-story-mapping-tool
+
+# 2. Run automated setup
+pnpm setup
+```
+
+The setup script will:
+- ✅ Check prerequisites (Node.js, pnpm, Docker, Supabase CLI)
+- ✅ Install dependencies
+- ✅ Start Supabase
+- ✅ Configure environment files automatically
+- ✅ Run database migrations
+- ✅ Set up test databases
+- ✅ Start services (optional)
+
+**That's it!** Your development environment is ready.
+
+### Manual Setup (Alternative)
+
+If you prefer manual setup or the automated script fails:
+
+<details>
+<summary>Click to expand manual setup steps</summary>
+
+#### 1. Clone the Repository
 
 ```bash
 git clone <repository-url>
 cd user-story-mapping-tool
 ```
 
-### 2. Install Dependencies
+#### 2. Install Dependencies
 
 ```bash
 pnpm install
 ```
 
-### 3. Set Up Local Supabase
+#### 3. Set Up Local Supabase
 
 ```bash
-# Initialize and start local Supabase
+# Start local Supabase
 supabase start
 
 # This will:
@@ -70,40 +101,27 @@ supabase start
 # - Display your local API keys (save these!)
 ```
 
-**Copy the output keys** - you'll need them for environment configuration.
-
-### 4. Configure Environment
+#### 4. Configure Environment
 
 Create `apps/backend/.env.local` with your local Supabase credentials:
 
 ```bash
-# Create the file
 cat > apps/backend/.env.local << 'EOF'
 # Local Development Environment
-# Uses local Supabase (from 'supabase start')
-
-# Database Connection (Local Supabase PostgreSQL)
 DATABASE_URL="postgresql://postgres:postgres@localhost:54322/postgres"
 DIRECT_URL="postgresql://postgres:postgres@localhost:54322/postgres"
-
-# Supabase Configuration (Local)
-# Get these keys from 'supabase start' output
 SUPABASE_URL="http://localhost:54321"
 SUPABASE_ANON_KEY="<paste-anon-key-from-supabase-start>"
 SUPABASE_SERVICE_ROLE_KEY="<paste-service-role-key-from-supabase-start>"
-
-# Server Configuration
 NODE_ENV=development
 PORT=3000
 API_PREFIX=api
 EOF
-
-# Now edit the file and replace the placeholder keys with actual keys from 'supabase start'
 ```
 
-**Important**: Copy the `anon key` and `service_role key` from the `supabase start` output and paste them into the file above.
+Replace the placeholder keys with actual keys from `supabase start` output.
 
-### 5. Run Database Migrations
+#### 5. Run Database Migrations
 
 ```bash
 cd apps/backend
@@ -112,19 +130,21 @@ npx prisma generate
 cd ../..
 ```
 
-### 6. Start the Application
+#### 6. Set Up Test Databases
 
 ```bash
-# Start both Supabase and Docker services
-pnpm local:start
-
-# This smart script will:
-# - Start Supabase (if in main repo)
-# - Start Docker backend
-# - Display service URLs
+pnpm test:setup
 ```
 
-### 7. Verify Setup
+#### 7. Start the Application
+
+```bash
+pnpm local:start
+```
+
+</details>
+
+### Verify Setup
 
 Open these URLs in your browser:
 - **Backend API**: http://localhost:3000/api/health
