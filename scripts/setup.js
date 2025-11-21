@@ -15,6 +15,7 @@ const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const net = require('net');
 
 // Colors for terminal output
 const colors = {
@@ -42,9 +43,9 @@ function logHeader(message) {
   console.log('═'.repeat(60) + '\n');
 }
 
-function execCommand(command, errorMessage) {
+function execCommand(command, errorMessage, options = {}) {
   try {
-    return execSync(command, { encoding: 'utf8', stdio: 'pipe' });
+    return execSync(command, { encoding: 'utf8', stdio: 'pipe', ...options });
   } catch (error) {
     if (errorMessage) {
       log(`❌ ${errorMessage}`, 'red');
@@ -86,6 +87,66 @@ function askQuestion(question) {
   });
 }
 
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
+
+    server.once('listening', () => {
+      server.close();
+      resolve(true);
+    });
+
+    server.listen(port);
+  });
+}
+
+function isProcessRunning(pid) {
+  try {
+    // Platform-specific check
+    if (process.platform === 'win32') {
+      // Windows: Use tasklist
+      const result = execSync(`tasklist /FI "PID eq ${pid}"`, { encoding: 'utf8' });
+      return result.includes(String(pid));
+    } else {
+      // Unix/Mac: Use kill with signal 0
+      process.kill(pid, 0);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function isInWorktree() {
+  try {
+    const gitCommonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8' }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+    return gitCommonDir !== gitDir;
+  } catch {
+    return false;
+  }
+}
+
+function validateJwtKey(key) {
+  // JWT format: header.payload.signature (base64 encoded parts separated by dots)
+  if (!key || typeof key !== 'string') return false;
+
+  const parts = key.split('.');
+  if (parts.length !== 3) return false;
+
+  // Each part should be base64-like (alphanumeric, -, _)
+  const base64Regex = /^[A-Za-z0-9_-]+$/;
+  return parts.every(part => part.length > 0 && base64Regex.test(part));
+}
+
 async function checkProjectRoot() {
   const packageJsonPath = path.join(process.cwd(), 'package.json');
   const backendPath = path.join(process.cwd(), 'apps/backend');
@@ -100,6 +161,17 @@ async function checkProjectRoot() {
     log('❌ apps/backend directory not found.', 'red');
     log('   This script must be run from the monorepo root.', 'yellow');
     process.exit(1);
+  }
+
+  // Check if in git worktree
+  if (isInWorktree()) {
+    log('⚠️  Warning: Running in a git worktree', 'yellow');
+    log('   This script is designed for the main repository.', 'yellow');
+    log('   Worktrees share Supabase but have separate Docker containers.', 'yellow');
+    const answer = await askQuestion('Continue anyway? (y/n):');
+    if (answer !== 'y' && answer !== 'yes') {
+      process.exit(0);
+    }
   }
 
   // Check if package.json has the right name
@@ -144,6 +216,20 @@ async function checkPrerequisites() {
     process.exit(1);
   }
   log('✅ Docker is running', 'green');
+
+  // Check if port 3000 is available
+  const portAvailable = await isPortAvailable(3000);
+  if (!portAvailable) {
+    log('⚠️  Warning: Port 3000 is already in use', 'yellow');
+    log('   The backend may fail to start if another service is using this port.', 'yellow');
+    const answer = await askQuestion('Continue anyway? (y/n):');
+    if (answer !== 'y' && answer !== 'yes') {
+      log('\nTip: Stop the service using port 3000, or configure a different PORT in .env', 'cyan');
+      process.exit(0);
+    }
+  } else {
+    log('✅ Port 3000 is available', 'green');
+  }
 
   log('\n✅ All prerequisites met!', 'bright');
 }
@@ -225,7 +311,20 @@ function extractSupabaseKeys() {
     dbUrl: dbUrlMatch ? dbUrlMatch[1].trim() : 'postgresql://postgres:postgres@localhost:54322/postgres',
   };
 
-  log('✅ Supabase keys extracted', 'green');
+  // Validate extracted keys
+  if (!validateJwtKey(keys.anonKey)) {
+    log('❌ Extracted anon key does not appear to be a valid JWT', 'red');
+    log(`   Key: ${keys.anonKey.substring(0, 50)}...`, 'red');
+    process.exit(1);
+  }
+
+  if (!validateJwtKey(keys.serviceKey)) {
+    log('❌ Extracted service_role key does not appear to be a valid JWT', 'red');
+    log(`   Key: ${keys.serviceKey.substring(0, 50)}...`, 'red');
+    process.exit(1);
+  }
+
+  log('✅ Supabase keys extracted and validated', 'green');
   return keys;
 }
 
@@ -234,6 +333,8 @@ async function createEnvFiles(keys) {
 
   const backendEnvLocal = path.join(process.cwd(), 'apps/backend/.env.local');
   const backendEnvTest = path.join(process.cwd(), 'apps/backend/.env.test');
+
+  let skipEnvLocal = false;
 
   // Create .env.local
   if (fs.existsSync(backendEnvLocal)) {
@@ -247,11 +348,12 @@ async function createEnvFiles(keys) {
         log('\n❌ Setup cancelled. Run again to overwrite .env.local', 'red');
         process.exit(0);
       }
-      return;
+      skipEnvLocal = true;
     }
   }
 
-  const envLocalContent = `# Local Development Environment
+  if (!skipEnvLocal) {
+    const envLocalContent = `# Local Development Environment
 # Auto-generated by pnpm setup on ${new Date().toISOString()}
 
 # Database Connection (Local Supabase PostgreSQL)
@@ -269,15 +371,24 @@ PORT=3000
 API_PREFIX=api
 `;
 
-  fs.writeFileSync(backendEnvLocal, envLocalContent);
-  log('✅ Created apps/backend/.env.local', 'green');
+    fs.writeFileSync(backendEnvLocal, envLocalContent);
+    log('✅ Created apps/backend/.env.local', 'green');
+  }
 
-  // Update .env.test keys (keep existing if has demo keys)
+  // Update .env.test keys (regardless of .env.local skip)
   if (fs.existsSync(backendEnvTest)) {
     const existingEnvTest = fs.readFileSync(backendEnvTest, 'utf8');
 
-    // Only update if using demo keys (not custom keys)
-    if (existingEnvTest.includes('supabase-demo')) {
+    // Check if keys look like demo keys (JWT format check)
+    const currentAnonMatch = existingEnvTest.match(/SUPABASE_ANON_KEY="?(.+?)"?$/m);
+    const currentServiceMatch = existingEnvTest.match(/SUPABASE_SERVICE_ROLE_KEY="?(.+?)"?$/m);
+
+    const shouldUpdate =
+      existingEnvTest.includes('supabase-demo') ||
+      (currentAnonMatch && !validateJwtKey(currentAnonMatch[1])) ||
+      (currentServiceMatch && !validateJwtKey(currentServiceMatch[1]));
+
+    if (shouldUpdate) {
       const updatedEnvTest = existingEnvTest
         .replace(/SUPABASE_ANON_KEY=.+/, `SUPABASE_ANON_KEY="${keys.anonKey}"`)
         .replace(/SUPABASE_SERVICE_ROLE_KEY=.+/, `SUPABASE_SERVICE_ROLE_KEY="${keys.serviceKey}"`);
@@ -285,7 +396,7 @@ API_PREFIX=api
       fs.writeFileSync(backendEnvTest, updatedEnvTest);
       log('✅ Updated apps/backend/.env.test with Supabase keys', 'green');
     } else {
-      log('ℹ️  .env.test already has custom keys, skipping update', 'cyan');
+      log('ℹ️  .env.test already has valid keys, skipping update', 'cyan');
     }
   }
 }
@@ -293,13 +404,42 @@ API_PREFIX=api
 async function runPrismaMigrations(keys) {
   logHeader('Step 5/7: Running Database Migrations');
 
+  // Check if migrations directory exists
+  const migrationsDir = path.join(process.cwd(), 'apps/backend/prisma/migrations');
+  if (!fs.existsSync(migrationsDir)) {
+    log('⚠️  No Prisma migrations directory found', 'yellow');
+    log('   Expected: apps/backend/prisma/migrations', 'yellow');
+    log('   Skipping migration step. Run "npx prisma migrate dev" to create migrations.', 'yellow');
+
+    // Still generate Prisma client
+    log('\nGenerating Prisma client...', 'cyan');
+    const generateResult = execCommand(
+      'npx prisma generate',
+      'Failed to generate Prisma client',
+      { cwd: path.join(process.cwd(), 'apps/backend') }
+    );
+
+    if (generateResult) {
+      log('✅ Prisma client generated', 'green');
+    }
+    return;
+  }
+
   log('Applying Prisma migrations...', 'cyan');
 
-  // Use extracted DATABASE_URL instead of hardcoded
-  const dbUrl = keys.dbUrl || 'postgresql://postgres:postgres@localhost:54322/postgres';
+  // Validate keys.dbUrl exists (don't use fallback)
+  if (!keys.dbUrl) {
+    log('❌ Database URL is missing from extracted keys', 'red');
+    log('   This indicates a bug in key extraction.', 'red');
+    log('   Please report this issue.', 'yellow');
+    process.exit(1);
+  }
+
+  // Use cwd option instead of cd command (handles spaces in paths)
   const result = execCommand(
-    `cd apps/backend && DATABASE_URL="${dbUrl}" npx prisma migrate deploy`,
-    'Failed to apply migrations'
+    `DATABASE_URL="${keys.dbUrl}" npx prisma migrate deploy`,
+    'Failed to apply migrations',
+    { cwd: path.join(process.cwd(), 'apps/backend') }
   );
 
   if (!result) {
@@ -314,8 +454,9 @@ async function runPrismaMigrations(keys) {
 
   log('\nGenerating Prisma client...', 'cyan');
   const generateResult = execCommand(
-    'cd apps/backend && npx prisma generate',
-    'Failed to generate Prisma client'
+    'npx prisma generate',
+    'Failed to generate Prisma client',
+    { cwd: path.join(process.cwd(), 'apps/backend') }
   );
 
   if (!generateResult) {
@@ -369,26 +510,25 @@ async function startServices() {
     log('API docs will be available at: http://localhost:3000/api/docs', 'yellow');
     log('Supabase Studio: http://localhost:54323\n', 'yellow');
 
-    // Use spawn (async) instead of spawnSync to avoid blocking
+    // Use spawn (async) with proper stdio handling for detached process
     const child = spawn('pnpm', ['local:start'], {
       detached: true,
-      stdio: 'inherit',
+      stdio: 'ignore',  // FIX: Use 'ignore' instead of 'inherit' for detached processes
       shell: true,
     });
+
+    // Don't wait for child process
+    child.unref();
 
     // Give it a moment to start
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Check if still running
-    try {
-      process.kill(child.pid, 0);
+    // Check if process is still running (platform-specific)
+    if (isProcessRunning(child.pid)) {
       log('✅ Services starting... Use "pnpm local:stop" to stop them', 'green');
-    } catch {
+    } else {
       log('⚠️  Services may have failed to start. Try manually with: pnpm local:start', 'yellow');
     }
-
-    // Don't wait for child process
-    child.unref();
   } else {
     log('\n⏭️  Skipping service startup', 'yellow');
     log('   Start later with: pnpm local:start', 'cyan');
@@ -441,8 +581,8 @@ async function main() {
     await startServices();
     await displaySummary();
 
+    // Close readline and let process exit naturally
     rl.close();
-    process.exit(0);
   } catch (error) {
     log('\n❌ Setup failed with error:', 'red');
     console.error(error);
