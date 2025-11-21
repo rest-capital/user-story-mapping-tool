@@ -291,10 +291,11 @@ async function installDependencies() {
 async function setupSupabase() {
   logHeader('Step 3/7: Setting Up Supabase');
 
-  // Check if Supabase is already running
+  // FIX: Check if Supabase is already running with more robust detection
   const status = execCommand('supabase status 2>&1', null);
 
-  if (status && status.includes('supabase_db_')) {
+  // Check for multiple indicators that Supabase is running and returning full status
+  if (status && status.includes('API URL:') && status.includes('DB URL:')) {
     log('✅ Supabase is already running', 'green');
     return extractSupabaseKeys();
   }
@@ -319,6 +320,11 @@ function extractSupabaseKeys() {
 
   const status = execCommand('supabase status', 'Failed to get Supabase status');
   if (!status) {
+    log('\nTip: If Supabase status fails, try:', 'yellow');
+    log('  1. Check if Supabase is running: supabase status', 'yellow');
+    log('  2. Restart Supabase: supabase stop && supabase start', 'yellow');
+    log('  3. Check Docker has enough resources (4GB+ RAM)', 'yellow');
+    log('  4. Check Docker is running: docker ps', 'yellow');
     process.exit(1);
   }
 
@@ -337,11 +343,28 @@ function extractSupabaseKeys() {
     process.exit(1);
   }
 
+  // FIX: Validate ALL values - no fallbacks that mask extraction failures
+  if (!apiUrlMatch || !dbUrlMatch) {
+    log('❌ Failed to extract Supabase URLs from output', 'red');
+    log('\nSupabase status output:', 'yellow');
+    console.log(status);
+    log('\nExpected output should contain:', 'yellow');
+    log('  - anon key: ...', 'yellow');
+    log('  - service_role key: ...', 'yellow');
+    log('  - API URL: ...', 'yellow');
+    log('  - DB URL: ...', 'yellow');
+    log('\nTip: This might indicate:', 'yellow');
+    log('  1. Supabase is not fully started', 'yellow');
+    log('  2. Supabase CLI version incompatibility', 'yellow');
+    log('  3. Docker resource constraints', 'yellow');
+    process.exit(1);
+  }
+
   const keys = {
     anonKey: anonKeyMatch[1].trim(),
     serviceKey: serviceKeyMatch[1].trim(),
-    apiUrl: apiUrlMatch ? apiUrlMatch[1].trim() : 'http://localhost:54321',
-    dbUrl: dbUrlMatch ? dbUrlMatch[1].trim() : 'postgresql://postgres:postgres@localhost:54322/postgres',
+    apiUrl: apiUrlMatch[1].trim(),
+    dbUrl: dbUrlMatch[1].trim(),
   };
 
   // Validate extracted keys
@@ -461,14 +484,6 @@ async function runPrismaMigrations(keys) {
   }
 
   log('Applying Prisma migrations...', 'cyan');
-
-  // Validate keys.dbUrl exists (don't use fallback)
-  if (!keys.dbUrl) {
-    log('❌ Database URL is missing from extracted keys', 'red');
-    log('   This indicates a bug in key extraction.', 'red');
-    log('   Please report this issue.', 'yellow');
-    process.exit(1);
-  }
 
   // FIX: Use env option instead of inline syntax (cross-platform compatible)
   const result = execCommand(
