@@ -172,6 +172,15 @@ export abstract class BaseService {
       );
 
       // Prisma automatically rolls back on error
+
+      // CRITICAL: If error is already a domain error (e.g., "Release not found"),
+      // re-throw it as-is so the exception filter can map it correctly
+      // Otherwise, wrap it in a generic "Transaction failed" error
+      if (error.name && error.name.endsWith('Error') && error.message) {
+        // Already a domain error - preserve it
+        throw error;
+      }
+
       throw this.createDomainError('Transaction failed', error, context);
     }
   }

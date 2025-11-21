@@ -55,6 +55,15 @@ export class StoriesService extends BaseService {
       async () => {
         const story = await this.prisma.story.findUnique({
           where: { id },
+          include: {
+            sourceLinks: {
+              include: {
+                targetStory: {
+                  select: { id: true, title: true, status: true },
+                },
+              },
+            },
+          },
         });
 
         if (!story) {
@@ -486,6 +495,213 @@ export class StoriesService extends BaseService {
       updated_at: story.updatedAt,
       created_by: story.createdBy,
       updated_by: story.updatedBy,
+      // Include dependencies if they were fetched
+      dependencies: story.sourceLinks
+        ? story.sourceLinks.map((link: any) => ({
+            id: link.id,
+            source_story_id: link.sourceStoryId,
+            target_story_id: link.targetStoryId,
+            link_type: link.linkType,
+            created_at: link.createdAt,
+            target_story: link.targetStory
+              ? {
+                  id: link.targetStory.id,
+                  title: link.targetStory.title,
+                  status: link.targetStory.status,
+                }
+              : undefined,
+          }))
+        : undefined,
     };
+  }
+
+  /**
+   * Add a tag to a story
+   */
+  async addTagToStory(storyId: string, tagId: string): Promise<{ success: boolean }> {
+    this.validateRequired(storyId, 'storyId');
+    this.validateRequired(tagId, 'tagId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify story exists
+        const story = await this.prisma.story.findUnique({
+          where: { id: storyId },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // Verify tag exists
+        const tag = await this.prisma.tag.findUnique({
+          where: { id: tagId },
+        });
+
+        if (!tag) {
+          throw new StoryError('Tag not found');
+        }
+
+        // Check if already associated
+        const existing = await this.prisma.storyTag.findUnique({
+          where: {
+            storyId_tagId: {
+              storyId,
+              tagId,
+            },
+          },
+        });
+
+        if (existing) {
+          throw new StoryError('Tag already associated with this story');
+        }
+
+        // Create association
+        await this.prisma.storyTag.create({
+          data: {
+            storyId,
+            tagId,
+          },
+        });
+
+        return { success: true };
+      },
+      'addTagToStory',
+      { storyId, tagId },
+    );
+  }
+
+  /**
+   * Get all tags for a story
+   */
+  async getStoryTags(storyId: string): Promise<any[]> {
+    this.validateRequired(storyId, 'storyId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify story exists
+        const story = await this.prisma.story.findUnique({
+          where: { id: storyId },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // Get tags
+        const storyTags = await this.prisma.storyTag.findMany({
+          where: { storyId },
+          include: {
+            tag: true,
+          },
+        });
+
+        return storyTags.map((st) => ({
+          id: st.tag.id,
+          name: st.tag.name,
+          color: st.tag.color,
+          created_at: st.tag.createdAt,
+        }));
+      },
+      'getStoryTags',
+      { storyId },
+    );
+  }
+
+  /**
+   * Add a persona to a story
+   */
+  async addPersonaToStory(
+    storyId: string,
+    personaId: string,
+  ): Promise<{ success: boolean }> {
+    this.validateRequired(storyId, 'storyId');
+    this.validateRequired(personaId, 'personaId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify story exists
+        const story = await this.prisma.story.findUnique({
+          where: { id: storyId },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // Verify persona exists
+        const persona = await this.prisma.persona.findUnique({
+          where: { id: personaId },
+        });
+
+        if (!persona) {
+          throw new StoryError('Persona not found');
+        }
+
+        // Check if already associated
+        const existing = await this.prisma.storyPersona.findUnique({
+          where: {
+            storyId_personaId: {
+              storyId,
+              personaId,
+            },
+          },
+        });
+
+        if (existing) {
+          throw new StoryError('Persona already associated with this story');
+        }
+
+        // Create association
+        await this.prisma.storyPersona.create({
+          data: {
+            storyId,
+            personaId,
+          },
+        });
+
+        return { success: true };
+      },
+      'addPersonaToStory',
+      { storyId, personaId },
+    );
+  }
+
+  /**
+   * Get all personas for a story
+   */
+  async getStoryPersonas(storyId: string): Promise<any[]> {
+    this.validateRequired(storyId, 'storyId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify story exists
+        const story = await this.prisma.story.findUnique({
+          where: { id: storyId },
+        });
+
+        if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // Get personas
+        const storyPersonas = await this.prisma.storyPersona.findMany({
+          where: { storyId },
+          include: {
+            persona: true,
+          },
+        });
+
+        return storyPersonas.map((sp) => ({
+          id: sp.persona.id,
+          name: sp.persona.name,
+          description: sp.persona.description,
+          avatar_url: sp.persona.avatarUrl,
+          created_at: sp.persona.createdAt,
+        }));
+      },
+      'getStoryPersonas',
+      { storyId },
+    );
   }
 }

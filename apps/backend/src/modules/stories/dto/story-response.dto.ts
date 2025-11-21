@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { StoryStatus } from './create-story.dto';
+import { StoryLinkResponseDto } from '../../story-links/dto/story-link-response.dto';
 
 export class StoryResponseDto {
   @ApiProperty({
@@ -95,4 +96,11 @@ export class StoryResponseDto {
     nullable: true,
   })
   updated_by!: string | null;
+
+  @ApiProperty({
+    description: 'Story dependencies (optional, only included when requested)',
+    type: [StoryLinkResponseDto],
+    required: false,
+  })
+  dependencies?: StoryLinkResponseDto[];
 }

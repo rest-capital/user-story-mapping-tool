@@ -178,7 +178,7 @@ export class JourneysService extends BaseService {
 
   /**
    * Reorder a journey
-   * Updates the sort_order to change position in the list
+   * Properly rearranges all journeys to maintain sequential 0-based sort_order
    */
   async reorder(
     id: string,
@@ -194,27 +194,51 @@ export class JourneysService extends BaseService {
       'new_sort_order',
     );
 
-    return this.executeOperation(
-      async () => {
-        // Verify journey exists
-        const existing = await this.prisma.journey.findUnique({
-          where: { id },
+    return this.executeInTransaction(
+      async (tx) => {
+        // Fetch all journeys sorted by current sort_order
+        const allJourneys = await tx.journey.findMany({
+          orderBy: { sortOrder: 'asc' },
         });
 
-        if (!existing) {
+        // Find the target journey
+        const targetIndex = allJourneys.findIndex((j: any) => j.id === id);
+        if (targetIndex === -1) {
           throw new JourneyError('Journey not found');
         }
 
-        // Update journey with new sort_order
-        const journey = await this.prisma.journey.update({
+        // Validate new position is within bounds
+        if (reorderDto.new_sort_order >= allJourneys.length) {
+          throw new JourneyError(
+            `new_sort_order must be less than ${allJourneys.length}`,
+          );
+        }
+
+        // Remove target journey from current position
+        const [targetJourney] = allJourneys.splice(targetIndex, 1);
+
+        // Insert at new position
+        allJourneys.splice(reorderDto.new_sort_order, 0, targetJourney);
+
+        // Update all journeys with new sequential sort_orders
+        await Promise.all(
+          allJourneys.map((journey: any, index: number) =>
+            tx.journey.update({
+              where: { id: journey.id },
+              data: {
+                sortOrder: index,
+                updatedBy: userId,
+              },
+            }),
+          ),
+        );
+
+        // Return the updated target journey
+        const updatedJourney = await tx.journey.findUnique({
           where: { id },
-          data: {
-            sortOrder: reorderDto.new_sort_order,
-            updatedBy: userId,
-          },
         });
 
-        return this.toResponseDto(journey);
+        return this.toResponseDto(updatedJourney!);
       },
       'reorderJourney',
       { journeyId: id, newSortOrder: reorderDto.new_sort_order, userId },

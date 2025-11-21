@@ -1,0 +1,133 @@
+# User Story Mapping Tool - .dockerignore
+# Excludes unnecessary files from Docker build context
+
+# ==============================================================================
+# Dependencies (installed inside container)
+# ==============================================================================
+node_modules
+apps/*/node_modules
+libs/*/node_modules
+.pnpm-store
+
+# ==============================================================================
+# Build outputs (generated inside container)
+# ==============================================================================
+dist
+build
+apps/*/dist
+apps/*/build
+*.tsbuildinfo
+
+# ==============================================================================
+# Environment files (keep examples)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+
+# Environment files that should never be in Docker images
+.env.local
+.env.development
+.env.production
+.env.test
+.env.test.local
+.env.test.cloud.backup
+
+# ==============================================================================
+# Logs and temporary files
+# ==============================================================================
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ==============================================================================
+# Testing outputs
+# ==============================================================================
+coverage
+.nyc_output
+test-results
+
+# ==============================================================================
+# Git files
+# ==============================================================================
+.git
+.github
+.gitignore
+.gitattributes
+
+# ==============================================================================
+# IDE and editor files
+# ==============================================================================
+.vscode
+.idea
+*.swp
+*.swo
+*.swn
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# ==============================================================================
+# OS files
+# ==============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================================================================
+# Docker files (no recursion)
+# ==============================================================================
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ==============================================================================
+# Supabase local state
+# ==============================================================================
+supabase/.branches
+supabase/.temp
+supabase/data
+
+# ==============================================================================
+# Documentation and planning
+# ==============================================================================
+docs
+thoughts
+*.md
+!README.md
+
+# Wireframes and design files
+wireframes
+
+# ==============================================================================
+# CI/CD files
+# ==============================================================================
+.github
+.gitlab-ci.yml
+.travis.yml
+.circleci
+
+# ==============================================================================
+# Package manager files (already copied explicitly)
+# ==============================================================================
+# Note: We copy these explicitly in Dockerfile, so exclude from general copy
+# But we need them, so don't actually ignore them
+# Just documenting that they're handled specially
+
+# ==============================================================================
+# Scripts (handled separately)
+# ==============================================================================
+scripts/sprout-*
+.sprout
+
+# ==============================================================================
+# Prisma (careful - we need migrations!)
+# ==============================================================================
+# Keep: apps/backend/prisma/schema.prisma
+# Keep: apps/backend/prisma/migrations/
+# Ignore: prisma studio artifacts
+apps/backend/prisma/dev.db
+apps/backend/prisma/dev.db-journal

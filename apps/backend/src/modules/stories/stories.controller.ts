@@ -213,4 +213,159 @@ export class StoriesController {
   ): Promise<StoryResponseDto> {
     return this.storiesService.move(id, moveDto, user.id);
   }
+
+  /**
+   * Add a tag to a story
+   * POST /stories/:id/tags
+   */
+  @Post(':id/tags')
+  @ApiOperation({
+    summary: 'Add a tag to a story',
+    description: 'Associates an existing tag with a story',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Story UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Tag added successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Story or tag not found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Tag already associated with this story',
+  })
+  async addTag(
+    @Param('id') id: string,
+    @Body() body: { tag_id: string },
+  ): Promise<{ success: boolean }> {
+    return this.storiesService.addTagToStory(id, body.tag_id);
+  }
+
+  /**
+   * Get all tags for a story
+   * GET /stories/:id/tags
+   */
+  @Get(':id/tags')
+  @ApiOperation({
+    summary: 'Get all tags for a story',
+    description: 'Returns all tags associated with the specified story',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Story UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of tags',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          color: { type: 'string' },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Story not found',
+  })
+  async getTags(@Param('id') id: string): Promise<any[]> {
+    return this.storiesService.getStoryTags(id);
+  }
+
+  /**
+   * Add a persona to a story
+   * POST /stories/:id/personas
+   */
+  @Post(':id/personas')
+  @ApiOperation({
+    summary: 'Add a persona to a story',
+    description: 'Associates an existing persona with a story',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Story UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Persona added successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Story or persona not found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Persona already associated with this story',
+  })
+  async addPersona(
+    @Param('id') id: string,
+    @Body() body: { persona_id: string },
+  ): Promise<{ success: boolean }> {
+    return this.storiesService.addPersonaToStory(id, body.persona_id);
+  }
+
+  /**
+   * Get all personas for a story
+   * GET /stories/:id/personas
+   */
+  @Get(':id/personas')
+  @ApiOperation({
+    summary: 'Get all personas for a story',
+    description: 'Returns all personas associated with the specified story',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Story UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of personas',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          description: { type: 'string' },
+          avatar_url: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Story not found',
+  })
+  async getPersonas(@Param('id') id: string): Promise<any[]> {
+    return this.storiesService.getStoryPersonas(id);
+  }
 }

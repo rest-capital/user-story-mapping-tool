@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { apiReference } from '@scalar/nestjs-api-reference';
 
 async function bootstrap() {
@@ -20,8 +20,8 @@ async function bootstrap() {
     }),
   );
 
-  // Exception filter
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // Exception filter (catches all exceptions and maps to HTTP status codes)
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // CORS
   app.enableCors();

@@ -218,7 +218,7 @@ export class StepsService extends BaseService {
 
   /**
    * Reorder a step
-   * Updates the sort_order to change position within a journey
+   * Properly rearranges all steps within a journey to maintain sequential 0-based sort_order
    */
   async reorder(
     id: string,
@@ -234,27 +234,61 @@ export class StepsService extends BaseService {
       'new_sort_order',
     );
 
-    return this.executeOperation(
-      async () => {
-        // Verify step exists
-        const existing = await this.prisma.step.findUnique({
+    return this.executeInTransaction(
+      async (tx) => {
+        // Get the target step to find its journey
+        const targetStep = await tx.step.findUnique({
           where: { id },
         });
 
-        if (!existing) {
+        if (!targetStep) {
           throw new StepError('Step not found');
         }
 
-        // Update step with new sort_order
-        const step = await this.prisma.step.update({
-          where: { id },
-          data: {
-            sortOrder: reorderDto.new_sort_order,
-            updatedBy: userId,
-          },
+        // Fetch all steps in the same journey sorted by current sort_order
+        const allSteps = await tx.step.findMany({
+          where: { journeyId: targetStep.journeyId },
+          orderBy: { sortOrder: 'asc' },
         });
 
-        return this.toResponseDto(step);
+        // Find the target step index
+        const targetIndex = allSteps.findIndex((s: any) => s.id === id);
+        if (targetIndex === -1) {
+          throw new StepError('Step not found');
+        }
+
+        // Validate new position is within bounds
+        if (reorderDto.new_sort_order >= allSteps.length) {
+          throw new StepError(
+            `new_sort_order must be less than ${allSteps.length}`,
+          );
+        }
+
+        // Remove target step from current position
+        const [movedStep] = allSteps.splice(targetIndex, 1);
+
+        // Insert at new position
+        allSteps.splice(reorderDto.new_sort_order, 0, movedStep);
+
+        // Update all steps with new sequential sort_orders
+        await Promise.all(
+          allSteps.map((step: any, index: number) =>
+            tx.step.update({
+              where: { id: step.id },
+              data: {
+                sortOrder: index,
+                updatedBy: userId,
+              },
+            }),
+          ),
+        );
+
+        // Return the updated target step
+        const updatedStep = await tx.step.findUnique({
+          where: { id },
+        });
+
+        return this.toResponseDto(updatedStep!);
       },
       'reorderStep',
       { stepId: id, newSortOrder: reorderDto.new_sort_order, userId },

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { BaseService } from '../../common/base.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StoryLinkError } from './errors/story-link.error';
@@ -39,7 +39,7 @@ export class StoryLinksService extends BaseService {
         });
 
         if (!sourceStory) {
-          throw new NotFoundException('Source story not found');
+          throw new StoryLinkError('Source story not found');
         }
 
         // Validate target story exists
@@ -49,12 +49,12 @@ export class StoryLinksService extends BaseService {
         });
 
         if (!targetStory) {
-          throw new NotFoundException('Target story not found');
+          throw new StoryLinkError('Target story not found');
         }
 
         // Prevent self-linking
         if (sourceStoryId === createDto.target_story_id) {
-          throw new BadRequestException('Cannot link a story to itself');
+          throw new StoryLinkError('Cannot link a story to itself');
         }
 
         // Check for duplicate link
@@ -67,7 +67,7 @@ export class StoryLinksService extends BaseService {
         });
 
         if (existingLink) {
-          throw new BadRequestException(
+          throw new StoryLinkError(
             `Link of type ${createDto.link_type} already exists between these stories`,
           );
         }
@@ -114,7 +114,7 @@ export class StoryLinksService extends BaseService {
         });
 
         if (!link) {
-          throw new NotFoundException(
+          throw new StoryLinkError(
             'Story link not found between these stories',
           );
         }
@@ -151,7 +151,7 @@ export class StoryLinksService extends BaseService {
         });
 
         if (!story) {
-          throw new NotFoundException('Story not found');
+          throw new StoryLinkError('Story not found');
         }
 
         // Get outgoing links (this story depends on others / blocks others)

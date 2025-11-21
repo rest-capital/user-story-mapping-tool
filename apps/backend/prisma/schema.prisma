@@ -113,7 +113,9 @@ model Release {
   stories  Story[]
   comments Comment[]
 
-  @@unique([isUnassigned], name: "unique_unassigned")
+  // Note: Unique constraint on isUnassigned removed because it prevents
+  // creating multiple releases with isUnassigned=false. The business rule
+  // (only one release can have isUnassigned=true) is enforced in the service layer.
   @@index([sortOrder], name: "idx_releases_sort")
   @@map("releases")
 }
@@ -168,7 +170,7 @@ model Tag {
 
 model Persona {
   id          String   @id @default(uuid())
-  name        String
+  name        String   @unique
   description String   @default("")
   avatarUrl   String?  @map("avatar_url")
   createdAt   DateTime @default(now()) @map("created_at")

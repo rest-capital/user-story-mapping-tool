@@ -223,7 +223,7 @@ export class ReleasesService extends BaseService {
 
   /**
    * Reorder a release
-   * Updates the sort_order to change position in the list
+   * Properly rearranges all releases to maintain sequential 0-based sort_order
    */
   async reorder(
     id: string,
@@ -239,27 +239,65 @@ export class ReleasesService extends BaseService {
       'new_sort_order',
     );
 
-    return this.executeOperation(
-      async () => {
-        // Verify release exists
-        const existing = await this.prisma.release.findUnique({
+    return this.executeInTransaction(
+      async (tx) => {
+        // Get the target release first to check if it's Unassigned
+        const targetRelease = await tx.release.findUnique({
           where: { id },
         });
 
-        if (!existing) {
+        if (!targetRelease) {
           throw new ReleaseError('Release not found');
         }
 
-        // Update release with new sort_order
-        const release = await this.prisma.release.update({
-          where: { id },
-          data: {
-            sortOrder: reorderDto.new_sort_order,
-            updatedBy: userId,
-          },
+        // CRITICAL: Cannot reorder Unassigned release (business rule)
+        if (targetRelease.isUnassigned) {
+          throw new ReleaseError('Cannot reorder the Unassigned release');
+        }
+
+        // Fetch all releases sorted by current sort_order
+        const allReleases = await tx.release.findMany({
+          orderBy: { sortOrder: 'asc' },
         });
 
-        return this.toResponseDto(release);
+        // Find the target release index
+        const targetIndex = allReleases.findIndex((r: any) => r.id === id);
+        if (targetIndex === -1) {
+          throw new ReleaseError('Release not found');
+        }
+
+        // Validate new position is within bounds
+        if (reorderDto.new_sort_order >= allReleases.length) {
+          throw new ReleaseError(
+            `new_sort_order must be less than ${allReleases.length}`,
+          );
+        }
+
+        // Remove target release from current position
+        const [movedRelease] = allReleases.splice(targetIndex, 1);
+
+        // Insert at new position
+        allReleases.splice(reorderDto.new_sort_order, 0, movedRelease);
+
+        // Update all releases with new sequential sort_orders
+        await Promise.all(
+          allReleases.map((release: any, index: number) =>
+            tx.release.update({
+              where: { id: release.id },
+              data: {
+                sortOrder: index,
+                updatedBy: userId,
+              },
+            }),
+          ),
+        );
+
+        // Return the updated target release
+        const updatedRelease = await tx.release.findUnique({
+          where: { id },
+        });
+
+        return this.toResponseDto(updatedRelease!);
       },
       'reorderRelease',
       { releaseId: id, newSortOrder: reorderDto.new_sort_order, userId },
