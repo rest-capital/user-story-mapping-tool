@@ -593,13 +593,19 @@ SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 
 #### 3.3 Create Scripts Directory and Smart Scripts
 
+---
+
+### 🔄 REFACTORING REQUIRED - Compare Implementations
+
+#### ❌ OLD CODE (DOCKER Plan - Do NOT implement, or remove if exists)
+
 **Create scripts directory:**
 
 ```bash
 mkdir -p scripts
 ```
 
-**Create `scripts/smart-start.js`:**
+**Create `scripts/smart-start.js` (SIMPLE VERSION - DO NOT USE):**
 
 ```javascript
 #!/usr/bin/env node
@@ -668,6 +674,135 @@ console.log('\n✅ All services stopped\n');
 chmod +x scripts/smart-start.js
 chmod +x scripts/smart-stop.js
 ```
+
+---
+
+#### ✅ NEW CODE (WORKTREE Implementation - USE THIS, Already in codebase)
+
+**What currently exists in `scripts/smart-start.js` (WORKTREE-AWARE VERSION - KEEP THIS):**
+
+```javascript
+#!/usr/bin/env node
+/**
+ * Smart Start - Detects environment and starts appropriate services
+ * Main directory: Starts Supabase + Docker
+ * Worktree: Starts Docker only (Supabase runs in main)
+ */
+const { execSync } = require('child_process');
+const fs = require('fs');
+
+function isWorktree() {
+  // Check if we're in a worktree by comparing git-dir and git-common-dir
+  try {
+    const gitCommonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8' }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+    return gitCommonDir !== gitDir;  // Different = worktree
+  } catch (error) {
+    return false;
+  }
+}
+
+function main() {
+  const inWorktree = isWorktree();
+
+  if (!inWorktree) {
+    // Main repository - start Supabase + Docker
+    console.log('▸ Starting Supabase...');
+    execSync('supabase start', { stdio: 'inherit' });
+  } else {
+    // Worktree - Docker only
+    console.log('ℹ️  Supabase runs in main repository');
+  }
+
+  console.log('▸ Starting Docker services...');
+  execSync('docker compose up -d', { stdio: 'inherit' });
+
+  showServiceInfo(ports);  // Shows URLs with port parsing
+}
+
+main();
+```
+
+**What currently exists in `scripts/smart-stop.js` (WORKTREE-AWARE VERSION - KEEP THIS):**
+
+```javascript
+#!/usr/bin/env node
+/**
+ * Smart Stop - Stops services appropriately
+ */
+const { execSync } = require('child_process');
+
+function isWorktree() {
+  try {
+    const gitCommonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8' }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+    return gitCommonDir !== gitDir;
+  } catch (error) {
+    return false;
+  }
+}
+
+function main() {
+  const inWorktree = isWorktree();
+
+  // Always stop Docker
+  execSync('docker compose down', { stdio: 'inherit' });
+
+  // Only stop Supabase in main repo
+  if (!inWorktree) {
+    execSync('supabase stop', { stdio: 'inherit' });
+  }
+}
+
+main();
+```
+
+**Bonus script that also exists: `scripts/smart-restart.js` (NOT in DOCKER plan - KEEP THIS):**
+
+```javascript
+#!/usr/bin/env node
+/**
+ * Smart Restart - Fast restart without Supabase (saves ~30 seconds)
+ */
+const { execSync } = require('child_process');
+
+function main() {
+  console.log('🔄 Fast restart (Docker only)...\n');
+  execSync('docker compose restart', { stdio: 'inherit' });
+}
+
+main();
+```
+
+---
+
+#### 🔧 REFACTORING ACTION
+
+**Check your codebase:**
+
+1. **If `scripts/smart-start.js` contains simple version (DOCKER plan)**:
+   - ❌ Delete it
+   - ✅ Verify WORKTREE version exists (should already be there)
+
+2. **If `scripts/smart-stop.js` contains simple version (DOCKER plan)**:
+   - ❌ Delete it
+   - ✅ Verify WORKTREE version exists (should already be there)
+
+3. **Verify these exist (from WORKTREE)**:
+   - ✅ `scripts/smart-start.js` with `isWorktree()` function
+   - ✅ `scripts/smart-stop.js` with `isWorktree()` function
+   - ✅ `scripts/smart-restart.js` (bonus feature)
+
+**Status check:**
+```bash
+# Verify worktree-aware versions exist
+grep "isWorktree" scripts/smart-start.js  # Should find matches
+grep "isWorktree" scripts/smart-stop.js   # Should find matches
+```
+
+**Expected result:** WORKTREE versions should already be in codebase. No changes needed.
+
+---
 
 #### 3.4 Update package.json Scripts
 
@@ -1277,12 +1412,23 @@ Ran all test suites.
 
 ## Phase 5: Parallel Development (Optional)
 
+---
+
+### 🔄 REFACTORING REQUIRED - Compare Implementations
+
+**DOCKER Plan proposes**: Sprout CLI approach (3rd party tool)
+**WORKTREE Implementation provides**: Bare repository + Git worktrees (industry standard)
+
+---
+
 ### Goal
 Enable multiple developers/agents to work on different branches simultaneously without port conflicts.
 
 **Note**: This phase is OPTIONAL and can be skipped if not needed.
 
-### Steps
+---
+
+### ❌ OLD CODE (DOCKER Plan - Do NOT implement, or remove if exists)
 
 #### 5.1 Install Sprout CLI
 
@@ -1408,13 +1554,119 @@ cat .env
 curl http://localhost:40123/api/health
 ```
 
-### Phase 5 Deliverables
+### Phase 5 Deliverables (DOCKER Plan - Don't use)
 
 - ✅ Sprout CLI installed
 - ✅ Sprout template configured in `.env.example`
 - ✅ Wrapper script created
 - ✅ pnpm scripts added
 - ✅ Parallel development tested
+
+---
+
+### ✅ NEW CODE (WORKTREE Implementation - USE THIS, Already in codebase)
+
+**What currently exists (from WORKTREE_STRATEGY.md):**
+
+#### Commands available via `package.json`:
+
+```json
+{
+  "scripts": {
+    "worktree:setup": "bash hack/setup_bare_repository.sh",
+    "worktree:create": "bash hack/create_worktree.sh",
+    "worktree:remove": "node hack/worktree-remove.js",
+    "worktree:cleanup": "node scripts/worktree-cleanup.js",
+    "worktree:cleanup-all": "node scripts/worktree-cleanup-all.js",
+    "worktree:refresh": "bash hack/worktree-refresh.sh",
+    "worktree:list": "bash hack/worktree-list.sh"
+  }
+}
+```
+
+#### Files that exist in codebase:
+
+**Scripts:**
+- ✅ `hack/setup_bare_repository.sh` - One-time bare repo setup
+- ✅ `hack/create_worktree.sh` - Creates worktree with template-based .env
+- ✅ `hack/worktree-remove.js` - Interactive removal with warnings
+- ✅ `scripts/worktree-cleanup.js` - Full cleanup with Docker volumes
+- ✅ `scripts/worktree-cleanup-all.js` - Nuclear cleanup for orphaned resources
+- ✅ `hack/worktree-refresh.sh` - Refresh with stashing
+- ✅ `hack/worktree-list.sh` - Pretty formatted list
+
+**Template system (already in `.env.example`):**
+```bash
+COMPOSE_PROJECT_NAME=user-story-mapping-{{ branch() }}
+BACKEND_PORT={{ auto_port() }}
+WEB_PORT={{ auto_port() }}
+INNGEST_PORT={{ auto_port() }}
+BRANCH_NAME={{ branch() }}
+```
+
+#### Usage (what currently works):
+
+```bash
+# One-time setup (creates bare repository)
+pnpm worktree:setup
+
+# Create isolated environment
+pnpm worktree:create ENG-123 feature/my-feature
+# Auto-generates:
+# - ~/code/user-story-mapping-tool/ENG-123 directory
+# - .env with 4 unique auto-assigned ports
+# - Complete git worktree on feature/my-feature branch
+
+# Work in isolation
+cd ~/code/user-story-mapping-tool/ENG-123
+pnpm local:start  # Smart script detects worktree, starts appropriately
+
+# Cleanup when done
+pnpm worktree:cleanup ENG-123
+# Removes:
+# - Git worktree
+# - Filesystem directory
+# - Docker containers (via worktree.branch label)
+# - Docker volumes
+# - Docker networks
+```
+
+---
+
+#### 🔧 REFACTORING ACTION
+
+**Check your codebase for Sprout-related files (should NOT exist):**
+
+1. **Files that should NOT exist (DOCKER Sprout approach)**:
+   - ❌ `sprout-create.sh` - Delete if exists
+   - ❌ `~/.local/bin/sprout` - Uninstall if exists (`pipx uninstall sprout`)
+   - ❌ Package.json scripts: `sprout:new`, `sprout:list`, `sprout:remove` - Remove if exist
+
+2. **Files that SHOULD exist (WORKTREE approach)**:
+   - ✅ `hack/setup_bare_repository.sh`
+   - ✅ `hack/create_worktree.sh`
+   - ✅ `hack/worktree-remove.js`
+   - ✅ `scripts/worktree-cleanup.js`
+   - ✅ `scripts/worktree-cleanup-all.js`
+   - ✅ `hack/worktree-refresh.sh`
+   - ✅ `hack/worktree-list.sh`
+
+3. **Verify template system in `.env.example`**:
+   - ✅ Should have `{{ branch() }}` and `{{ auto_port() }}` syntax
+   - ✅ Should have BRANCH_NAME variable
+
+**Status check:**
+```bash
+# Verify WORKTREE scripts exist
+ls -1 hack/worktree-*.sh hack/*_worktree.sh 2>/dev/null | wc -l  # Should be >= 3
+ls -1 scripts/worktree-*.js 2>/dev/null | wc -l  # Should be >= 2
+
+# Verify NO Sprout exists
+which sprout  # Should return "not found"
+ls -1 sprout-*.sh 2>/dev/null  # Should return nothing
+```
+
+**Expected result:** WORKTREE implementation should already be in codebase. No Sprout files should exist.
 
 ---
 

@@ -23,7 +23,7 @@
     "docker:status": "docker compose ps && docker system df",
     "worktree:setup": "bash hack/setup_bare_repository.sh",
     "worktree:create": "bash hack/create_worktree.sh",
-    "worktree:remove": "node hack/worktree-remove.js",
+    "worktree:remove": "node scripts/worktree-remove.js",
     "worktree:cleanup": "node scripts/worktree-cleanup.js",
     "worktree:cleanup-all": "node scripts/worktree-cleanup-all.js",
     "worktree:refresh": "bash hack/worktree-refresh.sh",
