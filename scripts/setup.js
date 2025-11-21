@@ -319,8 +319,9 @@ async function setupSupabase() {
 function extractSupabaseKeys(existingStatus = null) {
   log('\nExtracting Supabase keys...', 'cyan');
 
-  // FIX Bug #3: Use provided status if available, otherwise fetch it
-  const status = existingStatus || execCommand('supabase status', 'Failed to get Supabase status');
+  // FIX Bug #2: Use nullish coalescing (??) instead of logical OR (||)
+  // Only fetch if existingStatus is null/undefined, not if it's empty string or other falsy
+  const status = existingStatus ?? execCommand('supabase status', 'Failed to get Supabase status');
   if (!status) {
     log('\nTip: If Supabase status fails, try:', 'yellow');
     log('  1. Check if Supabase is running: supabase status', 'yellow');
@@ -333,8 +334,9 @@ function extractSupabaseKeys(existingStatus = null) {
   // Extract keys from status output with better error handling
   const anonKeyMatch = status.match(/anon key: (.+)/);
   const serviceKeyMatch = status.match(/service_role key: (.+)/);
-  const apiUrlMatch = status.match(/API URL: (.+)/);
-  const dbUrlMatch = status.match(/DB URL: (.+)/);
+  // FIX Bug #1: Use \S+ instead of .+ to stop at whitespace (avoid capturing trailing content)
+  const apiUrlMatch = status.match(/API URL: (\S+)/);
+  const dbUrlMatch = status.match(/DB URL: (\S+)/);
 
   if (!anonKeyMatch || !serviceKeyMatch) {
     log('❌ Failed to extract Supabase keys from output', 'red');
@@ -394,6 +396,25 @@ function extractSupabaseKeys(existingStatus = null) {
     log('❌ Extracted DB URL does not appear to be a valid PostgreSQL URL', 'red');
     log(`   URL: ${keys.dbUrl}`, 'red');
     log('   Expected format: postgresql://postgres:postgres@localhost:54322/postgres', 'yellow');
+    process.exit(1);
+  }
+
+  // FIX Bug #3: Validate URLs are well-formed (not just correct prefix)
+  // Validate API URL can be parsed
+  try {
+    new URL(keys.apiUrl);
+  } catch (error) {
+    log('❌ API URL is malformed and cannot be parsed', 'red');
+    log(`   URL: ${keys.apiUrl}`, 'red');
+    log(`   Error: ${error.message}`, 'red');
+    process.exit(1);
+  }
+
+  // Validate DB URL has basic PostgreSQL structure: protocol://[user[:password]@]host[:port]/database
+  if (!keys.dbUrl.match(/^postgres(ql)?:\/\/[^\/\s]+\/\w+/)) {
+    log('❌ DB URL is malformed - missing host or database name', 'red');
+    log(`   URL: ${keys.dbUrl}`, 'red');
+    log('   Expected format: postgresql://user:pass@host:port/database', 'yellow');
     process.exit(1);
   }
 
