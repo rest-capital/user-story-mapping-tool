@@ -78,6 +78,10 @@ function execCommand(command, options = {}) {
     return execSync(command, {
       encoding: 'utf8',
       stdio: options.silent ? 'pipe' : 'inherit',
+      env: {
+        ...process.env,
+        ...options.env
+      },
       ...options
     });
   } catch (error) {
@@ -133,9 +137,12 @@ function checkPsql() {
 
   if (!result || !result.trim()) {
     log.error('psql is not installed!');
-    log.info('Install PostgreSQL client tools:');
-    log.info('  macOS: brew install postgresql@16');
+    log.info('PostgreSQL client tools are required to run E2E tests.');
+    log.info('See README.md "Prerequisites" section for installation instructions.');
+    log.info('Quick install commands:');
+    log.info('  macOS: brew install libpq && brew link --force libpq');
     log.info('  Linux: sudo apt-get install postgresql-client');
+    log.info('  Windows: Download from https://www.postgresql.org/download/windows/');
     return false;
   }
 
@@ -211,11 +218,16 @@ function checkOrphanedDatabases(numWorkers) {
 /**
  * Clean up orphaned databases
  */
-async function cleanupOrphanedDatabases(orphaned) {
+async function cleanupOrphanedDatabases(orphaned, autoConfirm = false) {
   log.warn(`Found ${orphaned.length} orphaned test database(s): ${orphaned.join(', ')}`);
   log.info('These were created for more workers than you currently need.');
 
-  const shouldCleanup = await askYesNo('Delete orphaned databases? (Y/n): ', true);
+  let shouldCleanup = autoConfirm;
+  if (!autoConfirm) {
+    shouldCleanup = await askYesNo('Delete orphaned databases? (Y/n): ', true);
+  } else {
+    log.info('Cleaning up orphaned databases (auto-confirmed)');
+  }
 
   if (!shouldCleanup) {
     log.info('Keeping orphaned databases (you can clean them later with: pnpm docker:clean:test)');
@@ -267,12 +279,8 @@ function createDatabase(dbName, isRecreate) {
   execSync('sleep 0.5', { stdio: 'ignore' });
 
   // Drop if exists, then create
-  const sql = `
-    DROP DATABASE IF EXISTS ${dbName};
-    CREATE DATABASE ${dbName};
-  `;
-
-  const createCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -c "${sql}"`;
+  // IMPORTANT: Must use separate -c flags because DROP/CREATE DATABASE cannot run in transaction block
+  const createCmd = `PGPASSWORD=${PG_PASSWORD} psql -h ${PG_HOST} -p ${PG_PORT} -U ${PG_USER} -d ${PG_DB} -c "DROP DATABASE IF EXISTS ${dbName};" -c "CREATE DATABASE ${dbName};"`;
   const result = execCommand(createCmd, { silent: true, ignoreError: true });
 
   if (result === null) {
@@ -318,6 +326,9 @@ function applyMigrations(dbName) {
  * Main setup flow
  */
 async function main() {
+  // Check for --yes or -y flag to skip prompts
+  const autoConfirm = process.argv.includes('--yes') || process.argv.includes('-y');
+
   // Initialize readline interface for user prompts
   rl = readline.createInterface({
     input: process.stdin,
@@ -325,6 +336,11 @@ async function main() {
   });
 
   log.header('🗄️  Test Database Setup');
+
+  if (autoConfirm) {
+    log.info('Running in auto-confirm mode (--yes flag detected)');
+    console.log(''); // Blank line
+  }
 
   // Step 1: Check prerequisites
   if (!checkSupabase()) {
@@ -359,29 +375,33 @@ async function main() {
   const orphaned = checkOrphanedDatabases(workers);
   if (orphaned.length > 0) {
     console.log(''); // Blank line
-    await cleanupOrphanedDatabases(orphaned);
+    await cleanupOrphanedDatabases(orphaned, autoConfirm);
   }
 
-  // Step 4: Ask for confirmation if recreating
-  if (existing.length > 0) {
-    console.log(''); // Blank line
-    log.warn('⚠️  This will DELETE all data in existing test databases!');
-    const shouldContinue = await askYesNo('Do you want to recreate them? (y/N): ', false);
+  // Step 4: Ask for confirmation if recreating (unless --yes flag)
+  if (!autoConfirm) {
+    if (existing.length > 0) {
+      console.log(''); // Blank line
+      log.warn('⚠️  This will DELETE all data in existing test databases!');
+      const shouldContinue = await askYesNo('Do you want to recreate them? (y/N): ', false);
 
-    if (!shouldContinue) {
-      log.info('Setup cancelled');
-      rl.close();
-      return;
-    }
-  } else {
-    console.log(''); // Blank line
-    const shouldContinue = await askYesNo('Continue with setup? (Y/n): ', true);
+      if (!shouldContinue) {
+        log.info('Setup cancelled');
+        rl.close();
+        return;
+      }
+    } else {
+      console.log(''); // Blank line
+      const shouldContinue = await askYesNo('Continue with setup? (Y/n): ', true);
 
-    if (!shouldContinue) {
-      log.info('Setup cancelled');
-      rl.close();
-      return;
+      if (!shouldContinue) {
+        log.info('Setup cancelled');
+        rl.close();
+        return;
+      }
     }
+  } else if (existing.length > 0) {
+    log.info('Recreating existing databases (auto-confirmed)');
   }
 
   console.log(''); // Blank line

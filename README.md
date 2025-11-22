@@ -22,8 +22,11 @@ A collaborative user story mapping tool built with NestJS, PostgreSQL (Supabase)
 - **pnpm** >= 8.0.0
 - **Docker Desktop** (for containerized backend)
 - **Supabase CLI** (for local database)
+- **PostgreSQL Client Tools** (for E2E test database setup)
 
 ### Install Prerequisites
+
+#### Node.js and pnpm
 
 ```bash
 # Install Node.js via nvm (recommended)
@@ -34,12 +37,83 @@ nvm use 18
 # Install pnpm
 npm install -g pnpm
 
-# Install Supabase CLI
-brew install supabase/tap/supabase
-
 # Verify Docker is installed
 docker --version
 ```
+
+#### Supabase CLI
+
+```bash
+# macOS
+brew install supabase/tap/supabase
+
+# Linux
+brew install supabase/tap/supabase
+# Or download from https://github.com/supabase/cli/releases
+
+# Windows
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+scoop install supabase
+```
+
+#### PostgreSQL Client Tools (Required for E2E Tests)
+
+The `psql` command-line tool is required to create and manage test databases.
+
+**macOS:**
+```bash
+# Install libpq (lightweight PostgreSQL client)
+brew install libpq
+
+# Add psql to your PATH (add to ~/.zshrc or ~/.bash_profile)
+brew link --force libpq
+
+# Verify installation
+psql --version
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+# Install PostgreSQL client tools
+sudo apt-get update
+sudo apt-get install postgresql-client
+
+# Verify installation
+psql --version
+```
+
+**Linux (Fedora/RHEL):**
+```bash
+# Install PostgreSQL client tools
+sudo dnf install postgresql
+
+# Verify installation
+psql --version
+```
+
+**Windows:**
+```bash
+# Option 1: Use Chocolatey
+choco install postgresql --params '/Password:postgres'
+
+# Option 2: Download official installer
+# 1. Go to https://www.postgresql.org/download/windows/
+# 2. Download the installer
+# 3. During installation, select "Command Line Tools" only
+# 4. Add C:\Program Files\PostgreSQL\16\bin to your PATH
+
+# Verify installation (in new terminal)
+psql --version
+```
+
+**Verification:**
+After installation, verify that `psql` is accessible:
+```bash
+psql --version
+# Expected output: psql (PostgreSQL) 16.x
+```
+
+If `psql --version` fails, the installation was unsuccessful or PATH is not configured correctly.
 
 ---
 
