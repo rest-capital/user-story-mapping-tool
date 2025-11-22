@@ -20,6 +20,10 @@ import {
   MoveStoryEventDto,
   DeleteStoryEventDto,
 } from './dto/story-events.dto';
+import {
+  CreateCommentEventDto,
+  DeleteCommentEventDto,
+} from './dto/comment-events.dto';
 
 @WebSocketGateway({
   namespace: '/collaboration',
@@ -322,6 +326,108 @@ export class CollaborationGateway
         message: errorMessage,
         code: 'DELETE_FAILED',
         context: { storyId: data.id, mapId: data.mapId, operation: 'story.delete' },
+      });
+    }
+  }
+
+  /**
+   * Create a comment (broadcasted to all users in room)
+   */
+  @SubscribeMessage('comment.create')
+  async handleCreateComment(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: CreateCommentEventDto,
+  ) {
+    try {
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'comment.create' },
+        });
+        return;
+      }
+
+      // Extract user name from Supabase user metadata
+      const userName =
+        socket.user.user_metadata?.name ||
+        socket.user.user_metadata?.full_name ||
+        socket.user.email ||
+        'Unknown User';
+
+      const avatarUrl = socket.user.user_metadata?.avatar_url || null;
+
+      const comment = await this.collaborationService.createComment(
+        data.storyId,
+        data.content,
+        socket.user.id,
+        userName,
+        avatarUrl,
+      );
+
+      // Broadcast to all users in room
+      const roomName = `map:${data.mapId}`;
+      this.server.in(roomName).emit('comment.created', comment);
+
+      this.logger.log(`Comment created: ${comment.id} by ${socket.user.id}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to create comment';
+      this.logger.error(`Error creating comment: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'CREATE_FAILED',
+        context: { storyId: data.storyId, mapId: data.mapId, operation: 'comment.create' },
+      });
+    }
+  }
+
+  /**
+   * Delete a comment (broadcasted to all users in room)
+   */
+  @SubscribeMessage('comment.delete')
+  async handleDeleteComment(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: DeleteCommentEventDto,
+  ) {
+    try {
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'comment.delete' },
+        });
+        return;
+      }
+
+      const result = await this.collaborationService.deleteComment(
+        data.id,
+        socket.user.id,
+      );
+
+      // Broadcast to all users in room
+      const roomName = `map:${data.mapId}`;
+      this.server.in(roomName).emit('comment.deleted', result);
+
+      this.logger.log(`Comment deleted: ${data.id} by ${socket.user.id}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to delete comment';
+      this.logger.error(`Error deleting comment: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'DELETE_FAILED',
+        context: { commentId: data.id, mapId: data.mapId, operation: 'comment.delete' },
       });
     }
   }

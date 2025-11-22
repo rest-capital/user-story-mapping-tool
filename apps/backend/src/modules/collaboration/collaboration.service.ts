@@ -8,6 +8,10 @@ import {
   StoryMovedResponse,
   StoryDeletedResponse,
 } from './types/story-responses.type';
+import {
+  CommentCreatedResponse,
+  CommentDeletedResponse,
+} from './types/comment-responses.type';
 import { CreateStoryEventDto, UpdateStoryEventDto } from './dto/story-events.dto';
 
 @Injectable()
@@ -262,6 +266,85 @@ export class CollaborationService extends BaseService {
       },
       'deleteStoryViaWebSocket',
       { storyId },
+    );
+  }
+
+  /**
+   * Create a comment via WebSocket
+   */
+  async createComment(
+    storyId: string,
+    content: string,
+    userId: string,
+    userName: string,
+    avatarUrl: string | null,
+  ): Promise<CommentCreatedResponse> {
+    this.validateRequired(storyId, 'storyId');
+    this.validateRequired(content, 'content');
+    this.validateRequired(userId, 'userId');
+
+    return this.executeOperation(
+      async () => {
+        const comment = await this.prisma.comment.create({
+          data: {
+            storyId,
+            content,
+            authorId: userId,
+            author: userName,
+            avatarUrl: avatarUrl,
+          },
+        });
+
+        return {
+          id: comment.id,
+          story_id: comment.storyId,
+          content: comment.content,
+          author: comment.author,
+          author_id: comment.authorId,
+          avatar_url: comment.avatarUrl,
+          created_at: comment.createdAt,
+        };
+      },
+      'createCommentViaWebSocket',
+      { storyId, userId },
+    );
+  }
+
+  /**
+   * Delete a comment via WebSocket
+   */
+  async deleteComment(
+    commentId: string,
+    userId: string,
+  ): Promise<CommentDeletedResponse> {
+    this.validateRequired(commentId, 'commentId');
+
+    return this.executeOperation(
+      async () => {
+        // Verify comment exists and user is author
+        const comment = await this.prisma.comment.findUnique({
+          where: { id: commentId },
+        });
+
+        if (!comment) {
+          throw new CollaborationError('Comment not found');
+        }
+
+        if (comment.authorId !== userId) {
+          throw new CollaborationError('Only comment author can delete');
+        }
+
+        await this.prisma.comment.delete({
+          where: { id: commentId },
+        });
+
+        return {
+          id: commentId,
+          story_id: comment.storyId,
+        };
+      },
+      'deleteCommentViaWebSocket',
+      { commentId, userId },
     );
   }
 }
