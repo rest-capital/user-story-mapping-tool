@@ -318,6 +318,29 @@ async function main() {
     process.exit(1);
   }
 
+  // CRITICAL: Check if we're running from inside the worktree being removed
+  // If so, change to a safe directory to prevent "current directory no longer exists" errors
+  const currentDir = process.cwd();
+  const isInWorktreeBeingRemoved = currentDir.startsWith(worktreePath);
+
+  if (isInWorktreeBeingRemoved) {
+    log.warn('⚠️  You are currently inside the worktree being removed!');
+    log.info('Changing to main worktree to prevent errors...');
+
+    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const mainWorktree = path.join(homeDir, 'code', 'user-story-mapping-tool', 'main');
+
+    try {
+      process.chdir(mainWorktree);
+      log.success(`Changed directory to: ${mainWorktree}`);
+    } catch (error) {
+      // If main worktree doesn't exist, use home directory
+      process.chdir(homeDir);
+      log.success(`Changed directory to: ${homeDir}`);
+    }
+    console.log('');
+  }
+
   // Confirm removal
   const confirmed = await confirmRemoval(branchName, worktreePath);
   if (!confirmed) {
