@@ -3,7 +3,7 @@ import { User } from '@supabase/supabase-js';
 
 export type SocketWithAuth = Socket & {
   user: User;
-  data: {
+  data: Socket['data'] & {
     user: User;
   };
 };

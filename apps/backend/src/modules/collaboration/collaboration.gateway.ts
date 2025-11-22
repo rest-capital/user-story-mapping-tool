@@ -14,6 +14,12 @@ import { WsAuthMiddleware } from './middleware/ws-auth.middleware';
 import { SocketWithAuth } from './types/socket-with-auth.type';
 import { CollaborationService } from './collaboration.service';
 import { JoinRoomDto } from './dto/join-room.dto';
+import {
+  CreateStoryEventDto,
+  UpdateStoryEventDto,
+  MoveStoryEventDto,
+  DeleteStoryEventDto,
+} from './dto/story-events.dto';
 
 @WebSocketGateway({
   namespace: '/collaboration',
@@ -131,5 +137,192 @@ export class CollaborationGateway
     });
 
     this.logger.log(`User ${socket.user.id} left map ${mapId}`);
+  }
+
+  /**
+   * Create a story (broadcasted to all users in room including sender)
+   */
+  @SubscribeMessage('story.create')
+  async handleCreateStory(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: CreateStoryEventDto,
+  ) {
+    try {
+      // Check edit permission
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'story.create' },
+        });
+        return;
+      }
+
+      // Create story
+      const story = await this.collaborationService.createStory(
+        data,
+        socket.user.id,
+      );
+
+      // Broadcast to ALL users in the room using in() instead of to()
+      const roomName = `map:${data.mapId}`;
+      this.server.in(roomName).emit('story.created', story);
+
+      this.logger.log(
+        `Story created: ${story.id} by ${socket.user.id} in map ${data.mapId}`,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to create story';
+      this.logger.error(`Error creating story: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'CREATE_FAILED',
+        context: { mapId: data.mapId, operation: 'story.create' },
+      });
+    }
+  }
+
+  /**
+   * Update a story (broadcasted to other users only)
+   */
+  @SubscribeMessage('story.update')
+  async handleUpdateStory(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: UpdateStoryEventDto,
+  ) {
+    try {
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'story.update' },
+        });
+        return;
+      }
+
+      const story = await this.collaborationService.updateStory(
+        data.id,
+        data,
+        socket.user.id,
+      );
+
+      // Broadcast only to OTHERS (sender already has optimistic update)
+      const roomName = `map:${data.mapId}`;
+      socket.to(roomName).emit('story.updated', story);
+
+      this.logger.log(`Story updated: ${data.id} by ${socket.user.id}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to update story';
+      this.logger.error(`Error updating story: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'UPDATE_FAILED',
+        context: { storyId: data.id, mapId: data.mapId, operation: 'story.update' },
+      });
+    }
+  }
+
+  /**
+   * Move a story (broadcasted to other users only)
+   */
+  @SubscribeMessage('story.move')
+  async handleMoveStory(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: MoveStoryEventDto,
+  ) {
+    try {
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'story.move' },
+        });
+        return;
+      }
+
+      const story = await this.collaborationService.moveStory(
+        data.id,
+        data.toStepId,
+        data.toReleaseId,
+        socket.user.id,
+      );
+
+      // Broadcast to others
+      const roomName = `map:${data.mapId}`;
+      socket.to(roomName).emit('story.moved', story);
+
+      this.logger.log(`Story moved: ${data.id} by ${socket.user.id}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to move story';
+      this.logger.error(`Error moving story: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'MOVE_FAILED',
+        context: { storyId: data.id, mapId: data.mapId, operation: 'story.move' },
+      });
+    }
+  }
+
+  /**
+   * Delete a story (broadcasted to all users in room)
+   */
+  @SubscribeMessage('story.delete')
+  async handleDeleteStory(
+    @ConnectedSocket() socket: SocketWithAuth,
+    @MessageBody() data: DeleteStoryEventDto,
+  ) {
+    try {
+      const canEdit = await this.collaborationService.canEdit(
+        socket.user.id,
+        data.mapId,
+      );
+
+      if (!canEdit) {
+        socket.emit('error', {
+          message: 'Insufficient permissions',
+          code: 'PERMISSION_DENIED',
+          context: { mapId: data.mapId, operation: 'story.delete' },
+        });
+        return;
+      }
+
+      const result = await this.collaborationService.deleteStory(
+        data.id,
+        socket.user.id,
+      );
+
+      // Broadcast to all users in room
+      const roomName = `map:${data.mapId}`;
+      this.server.in(roomName).emit('story.deleted', result);
+
+      this.logger.log(`Story deleted: ${data.id} by ${socket.user.id}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to delete story';
+      this.logger.error(`Error deleting story: ${errorMessage}`);
+      socket.emit('error', {
+        message: errorMessage,
+        code: 'DELETE_FAILED',
+        context: { storyId: data.id, mapId: data.mapId, operation: 'story.delete' },
+      });
+    }
   }
 }
