@@ -7,7 +7,8 @@ export const personaFixtures = {
   /**
    * Minimal valid persona
    */
-  minimal: () => ({
+  minimal: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Persona'),
     description: '',
   }),
@@ -15,7 +16,8 @@ export const personaFixtures = {
   /**
    * Persona with custom name
    */
-  withName: (name: string) => ({
+  withName: (storyMapId: string, name: string) => ({
+    story_map_id: storyMapId,
     name,
     description: '',
   }),
@@ -23,7 +25,8 @@ export const personaFixtures = {
   /**
    * Persona with description
    */
-  withDescription: (description: string) => ({
+  withDescription: (storyMapId: string, description: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Persona'),
     description,
   }),
@@ -31,7 +34,8 @@ export const personaFixtures = {
   /**
    * Complete persona with name and description
    */
-  complete: () => ({
+  complete: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Persona'),
     description: 'A detailed persona description',
   }),
@@ -39,7 +43,8 @@ export const personaFixtures = {
   /**
    * Persona with empty name (for validation testing)
    */
-  invalidEmpty: () => ({
+  invalidEmpty: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: '',
     description: '',
   }),
@@ -48,15 +53,18 @@ export const personaFixtures = {
    * Common persona presets
    */
   presets: {
-    admin: () => ({
+    admin: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Admin User',
       description: 'System administrator with full access',
     }),
-    endUser: () => ({
+    endUser: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'End User',
       description: 'Regular user of the application',
     }),
-    powerUser: () => ({
+    powerUser: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Power User',
       description: 'Advanced user with extended capabilities',
     }),

@@ -31,23 +31,40 @@ export class JourneysService extends BaseService {
   /**
    * Create a new journey
    * Auto-generates sort_order, sets defaults
+   * Workspace-scoped: validates story_map_id and user access
    */
   async create(
     createDto: CreateJourneyDto,
     userId: string,
   ): Promise<JourneyResponseDto> {
     this.validateRequired(createDto.name, 'name', 'Journey');
+    this.validateRequired(createDto.story_map_id, 'story_map_id', 'Journey');
     this.validateRequired(userId, 'userId');
 
     return this.executeOperation(
       async () => {
-        // Business rule: Calculate next sort_order (0-based increment)
-        const existingCount = await this.prisma.journey.count();
+        // Verify story map exists and user has access
+        const storyMap = await this.prisma.storyMap.findFirst({
+          where: {
+            id: createDto.story_map_id,
+            createdBy: userId,
+          },
+        });
+
+        if (!storyMap) {
+          throw new JourneyError('Story map not found or access denied');
+        }
+
+        // Business rule: Calculate next sort_order within this story map
+        const existingCount = await this.prisma.journey.count({
+          where: { storyMapId: createDto.story_map_id },
+        });
         const sortOrder = existingCount; // 0, 1, 2, 3...
 
         // Create journey with defaults
         const journey = await this.prisma.journey.create({
           data: {
+            storyMapId: createDto.story_map_id,
             name: createDto.name,
             description: createDto.description || '',
             color: createDto.color || '#8B5CF6',
@@ -59,23 +76,28 @@ export class JourneysService extends BaseService {
         return this.toResponseDto(journey);
       },
       'createJourney',
-      { name: createDto.name, userId },
+      { name: createDto.name, storyMapId: createDto.story_map_id, userId },
     );
   }
 
   /**
    * Get all journeys sorted by sort_order
+   * Workspace-scoped: filtered by story_map_id
    */
-  async findAll(): Promise<JourneyResponseDto[]> {
+  async findAll(storyMapId: string): Promise<JourneyResponseDto[]> {
+    this.validateRequired(storyMapId, 'storyMapId');
+
     return this.executeOperation(
       async () => {
         const journeys = await this.prisma.journey.findMany({
+          where: { storyMapId },
           orderBy: { sortOrder: 'asc' },
         });
 
         return journeys.map((journey) => this.toResponseDto(journey));
       },
       'findAllJourneys',
+      { storyMapId },
     );
   }
 
@@ -179,6 +201,7 @@ export class JourneysService extends BaseService {
   /**
    * Reorder a journey
    * Properly rearranges all journeys to maintain sequential 0-based sort_order
+   * Workspace-scoped: only reorders within the same story map
    */
   async reorder(
     id: string,
@@ -196,12 +219,22 @@ export class JourneysService extends BaseService {
 
     return this.executeInTransaction(
       async (tx) => {
-        // Fetch all journeys sorted by current sort_order
+        // Get target journey to find its storyMapId
+        const targetJourney = await tx.journey.findUnique({
+          where: { id },
+        });
+
+        if (!targetJourney) {
+          throw new JourneyError('Journey not found');
+        }
+
+        // Fetch all journeys in the same story map sorted by current sort_order
         const allJourneys = await tx.journey.findMany({
+          where: { storyMapId: targetJourney.storyMapId },
           orderBy: { sortOrder: 'asc' },
         });
 
-        // Find the target journey
+        // Find the target journey in the list
         const targetIndex = allJourneys.findIndex((j: any) => j.id === id);
         if (targetIndex === -1) {
           throw new JourneyError('Journey not found');
@@ -215,10 +248,10 @@ export class JourneysService extends BaseService {
         }
 
         // Remove target journey from current position
-        const [targetJourney] = allJourneys.splice(targetIndex, 1);
+        const [movedJourney] = allJourneys.splice(targetIndex, 1);
 
         // Insert at new position
-        allJourneys.splice(reorderDto.new_sort_order, 0, targetJourney);
+        allJourneys.splice(reorderDto.new_sort_order, 0, movedJourney);
 
         // Update all journeys with new sequential sort_orders
         await Promise.all(
@@ -252,6 +285,7 @@ export class JourneysService extends BaseService {
   private toResponseDto(journey: any): JourneyResponseDto {
     return {
       id: journey.id,
+      story_map_id: journey.storyMapId,
       name: journey.name,
       description: journey.description,
       sort_order: journey.sortOrder,

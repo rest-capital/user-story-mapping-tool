@@ -43,9 +43,11 @@ export function recreatePrismaClient(): void {
 /**
  * Resets the entire test database
  * Deletes all records in reverse dependency order (critical!)
- * CRITICAL: Recreates the Unassigned release after cleanup
  *
  * IMPORTANT: This is called before EACH test to ensure isolation
+ *
+ * NOTE: Each StoryMap automatically gets its own Unassigned release when created,
+ * so we don't need to create a global one here anymore.
  *
  * @returns Promise<void>
  */
@@ -61,19 +63,7 @@ export async function resetDatabase(): Promise<void> {
   await client.journey.deleteMany();
   await client.tag.deleteMany();
   await client.persona.deleteMany();
-
-  // CRITICAL: Recreate the Unassigned release (required for stories without release)
-  // This mimics the seed file behavior
-  await client.release.create({
-    data: {
-      name: 'Unassigned',
-      description: 'Default release for unassigned stories',
-      isUnassigned: true,
-      sortOrder: 0, // Always first (tests expect position 0, not 999999)
-      createdBy: 'system',
-      shipped: false,
-    },
-  });
+  await client.storyMap.deleteMany(); // StoryMaps are parents of releases
 }
 
 /**
@@ -98,6 +88,7 @@ export async function disconnectDatabase(): Promise<void> {
 export async function assertDatabaseIsEmpty(): Promise<void> {
   const client = getPrismaClient();
   const counts = await Promise.all([
+    client.storyMap.count(),
     client.journey.count(),
     client.step.count(),
     client.release.count(),
@@ -112,14 +103,15 @@ export async function assertDatabaseIsEmpty(): Promise<void> {
 
   if (total > 0) {
     const details = [
-      `Journeys: ${counts[0]}`,
-      `Steps: ${counts[1]}`,
-      `Releases: ${counts[2]}`,
-      `Stories: ${counts[3]}`,
-      `Comments: ${counts[4]}`,
-      `Tags: ${counts[5]}`,
-      `Personas: ${counts[6]}`,
-      `StoryLinks: ${counts[7]}`,
+      `StoryMaps: ${counts[0]}`,
+      `Journeys: ${counts[1]}`,
+      `Steps: ${counts[2]}`,
+      `Releases: ${counts[3]}`,
+      `Stories: ${counts[4]}`,
+      `Comments: ${counts[5]}`,
+      `Tags: ${counts[6]}`,
+      `Personas: ${counts[7]}`,
+      `StoryLinks: ${counts[8]}`,
     ].join(', ');
 
     throw new Error(`❌ Database not empty! Found ${total} records (${details})`);

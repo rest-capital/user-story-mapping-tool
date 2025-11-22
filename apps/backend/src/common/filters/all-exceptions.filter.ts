@@ -14,6 +14,7 @@ import {
 export class AllExceptionsFilter implements ExceptionFilter {
   // Domain error class names (from our modules)
   private readonly domainErrors = [
+    'StoryMapError',
     'JourneyError',
     'StepError',
     'ReleaseError',

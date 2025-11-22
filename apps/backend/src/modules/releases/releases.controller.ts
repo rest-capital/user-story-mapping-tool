@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -58,18 +59,18 @@ export class ReleasesController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all releases' })
+  @ApiOperation({ summary: 'Get all releases for a story map (workspace-scoped)' })
   @ApiResponse({
     status: 200,
-    description: 'List of all releases',
+    description: 'List of all releases for the story map',
     type: [ReleaseResponseDto],
   })
   @ApiResponse({
     status: 401,
     description: 'Unauthorized',
   })
-  findAll(): Promise<ReleaseResponseDto[]> {
-    return this.releasesService.findAll();
+  findAll(@Query('story_map_id') storyMapId: string): Promise<ReleaseResponseDto[]> {
+    return this.releasesService.findAll(storyMapId);
   }
 
   @Get(':id')

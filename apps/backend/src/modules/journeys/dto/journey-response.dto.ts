@@ -12,6 +12,12 @@ export class JourneyResponseDto {
   id!: string;
 
   @ApiProperty({
+    description: 'Story map ID (workspace scoping)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  story_map_id!: string;
+
+  @ApiProperty({
     description: 'Journey name',
     example: 'Messaging',
   })

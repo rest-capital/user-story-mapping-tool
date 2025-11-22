@@ -8,16 +8,16 @@ export class TagResponseDto {
   id!: string;
 
   @ApiProperty({
+    description: 'Story map ID (workspace scoping)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  story_map_id!: string;
+
+  @ApiProperty({
     description: 'Tag name',
     example: 'Frontend',
   })
   name!: string;
-
-  @ApiProperty({
-    description: 'Tag color (hex code)',
-    example: '#10B981',
-  })
-  color!: string;
 
   @ApiProperty({
     description: 'Timestamp of creation',

@@ -12,10 +12,10 @@
  */
 
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import {
+  createStoryMap,
   createJourney,
   createStep,
   createRelease,
@@ -27,6 +27,7 @@ import {
 describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -34,6 +35,7 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
 
   beforeEach(async () => {
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -43,7 +45,7 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
   describe('Complete Story Map Creation', () => {
     it('should create complete story map (journey → steps → releases → stories)', async () => {
       // Step 1: Create journey using factory
-      const journey = await createJourney(app, authToken, 'User Onboarding Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'User Onboarding Journey');
 
       expect(journey.id).toBeDefined();
       expect(journey.name).toBe('User Onboarding Journey');
@@ -58,8 +60,8 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
       expect(step3.sort_order).toBe(2);
 
       // Step 3: Create 2 releases using factories
-      const mvp = await createRelease(app, authToken, 'MVP');
-      const v2 = await createRelease(app, authToken, 'V2');
+      const mvp = await createRelease(app, authToken, storyMap.id, 'MVP');
+      const v2 = await createRelease(app, authToken, storyMap.id, 'V2');
 
       // Step 4: Create stories in different cells using factories
       const story1 = await createStory(app, authToken, step1.id, mvp.id, {
@@ -112,20 +114,20 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
   describe('Story Associations', () => {
     it('should add tags and personas to existing story', async () => {
       // Create journey, step, release, and story using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
-      const release = await createRelease(app, authToken, 'Test Release');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
       const story = await createStory(app, authToken, step.id, release.id, {
         title: 'Feature Story',
       });
 
       // Create tags using factories
-      const tag1 = await createTag(app, authToken);
-      const tag2 = await createTag(app, authToken, 'Important');
+      const tag1 = await createTag(app, authToken, storyMap.id);
+      const tag2 = await createTag(app, authToken, storyMap.id, 'Important');
 
       // Create personas using factories
-      const persona1 = await createPersona(app, authToken);
-      const persona2 = await createPersona(app, authToken, 'Admin User');
+      const persona1 = await createPersona(app, authToken, storyMap.id);
+      const persona2 = await createPersona(app, authToken, storyMap.id, 'Admin User');
 
       // Add tags to story
       await authenticatedRequest(app, authToken)
@@ -182,19 +184,19 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
   describe('Story Movement with Associations', () => {
     it('should move story and verify all associations remain intact', async () => {
       // Create infrastructure using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step1 = await createStep(app, authToken, journey.id, 'Step 1');
       const step2 = await createStep(app, authToken, journey.id, 'Step 2');
-      const release1 = await createRelease(app, authToken, 'Release 1');
-      const release2 = await createRelease(app, authToken, 'Release 2');
+      const release1 = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const release2 = await createRelease(app, authToken, storyMap.id, 'Release 2');
 
       // Create story with associations using factories
       const story = await createStory(app, authToken, step1.id, release1.id, {
         title: 'Movable Story',
       });
 
-      const tag = await createTag(app, authToken, 'Test Tag');
-      const persona = await createPersona(app, authToken, 'Test Persona');
+      const tag = await createTag(app, authToken, storyMap.id, 'Test Tag');
+      const persona = await createPersona(app, authToken, storyMap.id, 'Test Persona');
 
       await authenticatedRequest(app, authToken)
         .post(`/api/stories/${story.id}/tags`)
@@ -266,10 +268,10 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
   describe('Journey Cascade Delete', () => {
     it('should delete journey and verify all nested entities removed', async () => {
       // Create complete hierarchy using factories
-      const journey = await createJourney(app, authToken, 'Journey to Delete');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Journey to Delete');
       const step1 = await createStep(app, authToken, journey.id, 'Step 1');
       const step2 = await createStep(app, authToken, journey.id, 'Step 2');
-      const release = await createRelease(app, authToken, 'Test Release');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
 
       const story1 = await createStory(app, authToken, step1.id, release.id, {
         title: 'Story 1',

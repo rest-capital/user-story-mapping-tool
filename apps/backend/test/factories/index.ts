@@ -6,6 +6,11 @@
  */
 
 // Entity factories
+export {
+  createStoryMap,
+  createStoryMaps,
+  getDefaultStoryMap,
+} from './story-map.factory';
 export { createJourney, createJourneys } from './journey.factory';
 export { createStep, createSteps } from './step.factory';
 export {

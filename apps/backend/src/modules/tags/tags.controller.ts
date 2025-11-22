@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +19,8 @@ import { TagsService } from './tags.service';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { TagResponseDto } from './dto/tag-response.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
+import { GetUser } from '../../common/decorators/get-user.decorator';
+import { User } from '@supabase/supabase-js';
 
 @ApiTags('tags')
 @Controller('tags')
@@ -27,17 +30,17 @@ export class TagsController {
   constructor(private readonly tagsService: TagsService) {}
 
   /**
-   * Get all tags
+   * Get all tags for a story map
    */
   @Get()
-  @ApiOperation({ summary: 'Get all tags' })
+  @ApiOperation({ summary: 'Get all tags for a story map (workspace-scoped)' })
   @ApiResponse({
     status: 200,
     description: 'List of all tags ordered by name',
     type: [TagResponseDto],
   })
-  async findAll(): Promise<TagResponseDto[]> {
-    return this.tagsService.findAll();
+  async findAll(@Query('story_map_id') storyMapId: string): Promise<TagResponseDto[]> {
+    return this.tagsService.findAll(storyMapId);
   }
 
   /**
@@ -77,8 +80,11 @@ export class TagsController {
     status: 400,
     description: 'Tag with this name already exists',
   })
-  async create(@Body() createTagDto: CreateTagDto): Promise<TagResponseDto> {
-    return this.tagsService.create(createTagDto);
+  async create(
+    @Body() createTagDto: CreateTagDto,
+    @GetUser() user: User,
+  ): Promise<TagResponseDto> {
+    return this.tagsService.create(createTagDto, user.id);
   }
 
   /**

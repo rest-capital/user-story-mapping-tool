@@ -14,10 +14,10 @@
  */
 
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import {
+  createStoryMap,
   createJourney,
   createStep,
   createRelease,
@@ -30,6 +30,7 @@ import {
 describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -37,6 +38,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
   beforeEach(async () => {
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -46,14 +48,14 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   describe('DELETE /api/journeys/:id - Cascade to steps and stories', () => {
     it('should cascade delete journey along with its steps and stories', async () => {
       // Create journey using factory
-      const journey = await createJourney(app, authToken, 'Journey to Delete');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Journey to Delete');
 
       // Create 2 steps in the journey using factories
       const step1 = await createStep(app, authToken, journey.id, 'Step 1');
       const step2 = await createStep(app, authToken, journey.id, 'Step 2');
 
       // Get Unassigned release using factory
-      const release = await getUnassignedRelease(app, authToken);
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create stories in each step using factories
       const story1 = await createStory(app, authToken, step1.id, release.id, { title: 'Story 1' });
@@ -97,11 +99,11 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   describe('DELETE /api/steps/:id - Cascade to stories', () => {
     it('should cascade delete step along with its stories', async () => {
       // Create journey and step using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Step to Delete');
 
       // Get Unassigned release using factory
-      const release = await getUnassignedRelease(app, authToken);
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create multiple stories in the step using factories
       const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });
@@ -146,14 +148,14 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   describe('DELETE /api/releases/:id - Move stories to Unassigned', () => {
     it('should delete release but move stories to Unassigned (not cascade delete)', async () => {
       // Create journey and step using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
 
       // Create a custom release using factory
-      const release = await createRelease(app, authToken, 'Release to Delete');
+      const release = await createRelease(app, authToken, storyMap.id, 'Release to Delete');
 
       // Get Unassigned release using factory
-      const unassigned = await getUnassignedRelease(app, authToken);
+      const unassigned = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create stories in the custom release using factories
       const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });
@@ -198,9 +200,9 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
       // but we'll verify the complete cleanup flow here
 
       // Create journey, step, and release using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
-      const release = await getUnassignedRelease(app, authToken);
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create 3 stories using factories
       const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });
@@ -276,12 +278,12 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   describe('DELETE /api/tags/:id - Remove tag associations', () => {
     it('should delete tag but not the stories (only remove associations)', async () => {
       // Create journey, step, and release using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
-      const release = await getUnassignedRelease(app, authToken);
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create a tag using factory
-      const tag = await createTag(app, authToken);
+      const tag = await createTag(app, authToken, storyMap.id);
 
       // Create stories using factories
       const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });
@@ -341,12 +343,12 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
   describe('DELETE /api/personas/:id - Remove persona associations', () => {
     it('should delete persona but not the stories (only remove associations)', async () => {
       // Create journey, step, and release using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
-      const release = await getUnassignedRelease(app, authToken);
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
 
       // Create a persona using factory
-      const persona = await createPersona(app, authToken);
+      const persona = await createPersona(app, authToken, storyMap.id);
 
       // Create stories using factories
       const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });

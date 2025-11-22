@@ -12,6 +12,12 @@ export class ReleaseResponseDto {
   id!: string;
 
   @ApiProperty({
+    description: 'Story map ID (workspace scoping)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  story_map_id!: string;
+
+  @ApiProperty({
     description: 'Release name',
     example: 'Sprint 1',
   })
@@ -52,7 +58,7 @@ export class ReleaseResponseDto {
 
   @ApiProperty({
     description:
-      'Sort order (0-based index for normal releases, 999999 for Unassigned)',
+      'Sort order (0-based index, Unassigned is always 0 at the top)',
     example: 0,
   })
   sort_order!: number;

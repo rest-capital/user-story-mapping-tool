@@ -23,8 +23,12 @@ import * as path from 'path';
 import { resetDatabase, disconnectDatabase, recreatePrismaClient } from './helpers/database';
 import { deleteAllTestUsers } from './helpers/auth-cleanup';
 
-// Load test environment variables
-dotenv.config({ path: path.join(__dirname, '../.env.test') });
+// Load test environment variables with override to ensure .env.test takes precedence
+dotenv.config({ path: path.join(__dirname, '../.env.test'), override: true });
+
+// Debug: Log loaded Supabase config to verify correct keys
+console.log('[Test Setup] SUPABASE_URL:', process.env.SUPABASE_URL);
+console.log('[Test Setup] SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...');
 
 /**
  * Get worker-specific database name

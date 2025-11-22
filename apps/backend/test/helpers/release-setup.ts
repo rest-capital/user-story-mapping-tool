@@ -31,22 +31,27 @@ function getPrismaClient(): PrismaClient {
 }
 
 /**
- * Ensure the Unassigned release exists in the database
+ * Ensure the Unassigned release exists in the database for a story map
  *
  * The Unassigned release is a special release that:
  * - Cannot be created via the API (enforced in service layer)
  * - Cannot be deleted (business rule)
  * - Is required for delete operations (stories are moved here)
+ * - One per story map (workspace-scoped)
  *
  * This helper creates it directly via Prisma for testing purposes
  *
+ * @param storyMapId - Story map ID (workspace scoping)
  * @returns The Unassigned release object
  */
-export async function ensureUnassignedRelease() {
+export async function ensureUnassignedRelease(storyMapId: string) {
   const client = getPrismaClient();
-  // Check if Unassigned release already exists
+  // Check if Unassigned release already exists for this story map
   const existing = await client.release.findFirst({
-    where: { isUnassigned: true },
+    where: {
+      storyMapId,
+      isUnassigned: true,
+    },
   });
 
   if (existing) {
@@ -56,10 +61,11 @@ export async function ensureUnassignedRelease() {
   // Create Unassigned release directly via Prisma (bypassing API validation)
   return await client.release.create({
     data: {
+      storyMapId,
       name: 'Unassigned',
       description: 'Default release for unassigned stories',
       isUnassigned: true,
-      sortOrder: -1, // Put at the top (before normal releases which start at 0)
+      sortOrder: 0, // Put at the top (updated from bug fix - was -1, should be 0)
       shipped: false,
       createdBy: 'system',
     },

@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,6 +21,8 @@ import { CreatePersonaDto } from './dto/create-persona.dto';
 import { UpdatePersonaDto } from './dto/update-persona.dto';
 import { PersonaResponseDto } from './dto/persona-response.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
+import { GetUser } from '../../common/decorators/get-user.decorator';
+import { User } from '@supabase/supabase-js';
 
 @ApiTags('personas')
 @Controller('personas')
@@ -29,17 +32,17 @@ export class PersonasController {
   constructor(private readonly personasService: PersonasService) {}
 
   /**
-   * Get all personas
+   * Get all personas for a story map
    */
   @Get()
-  @ApiOperation({ summary: 'Get all personas' })
+  @ApiOperation({ summary: 'Get all personas for a story map (workspace-scoped)' })
   @ApiResponse({
     status: 200,
     description: 'List of all personas ordered by name',
     type: [PersonaResponseDto],
   })
-  async findAll(): Promise<PersonaResponseDto[]> {
-    return this.personasService.findAll();
+  async findAll(@Query('story_map_id') storyMapId: string): Promise<PersonaResponseDto[]> {
+    return this.personasService.findAll(storyMapId);
   }
 
   /**
@@ -81,8 +84,9 @@ export class PersonasController {
   })
   async create(
     @Body() createPersonaDto: CreatePersonaDto,
+    @GetUser() user: User,
   ): Promise<PersonaResponseDto> {
-    return this.personasService.create(createPersonaDto);
+    return this.personasService.create(createPersonaDto, user.id);
   }
 
   /**
@@ -107,8 +111,9 @@ export class PersonasController {
   async update(
     @Param('id') id: string,
     @Body() updatePersonaDto: UpdatePersonaDto,
+    @GetUser() user: User,
   ): Promise<PersonaResponseDto> {
-    return this.personasService.update(id, updatePersonaDto);
+    return this.personasService.update(id, updatePersonaDto, user.id);
   }
 
   /**

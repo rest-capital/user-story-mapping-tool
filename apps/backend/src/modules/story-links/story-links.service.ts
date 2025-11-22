@@ -33,19 +33,42 @@ export class StoryLinksService extends BaseService {
 
     return this.executeOperation(
       async () => {
-        // Validate source story exists
+        // Validate source story exists and fetch workspace context
         const sourceStory = await this.prisma.story.findUnique({
           where: { id: sourceStoryId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+            release: {
+              select: { storyMapId: true },
+            },
+          },
         });
 
         if (!sourceStory) {
           throw new StoryLinkError('Source story not found');
         }
 
-        // Validate target story exists
+        // Validate target story exists and fetch workspace context
         const targetStory = await this.prisma.story.findUnique({
           where: { id: createDto.target_story_id },
-          select: { id: true, title: true, status: true },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+            release: {
+              select: { storyMapId: true },
+            },
+          },
         });
 
         if (!targetStory) {
@@ -55,6 +78,17 @@ export class StoryLinksService extends BaseService {
         // Prevent self-linking
         if (sourceStoryId === createDto.target_story_id) {
           throw new StoryLinkError('Cannot link a story to itself');
+        }
+
+        // CRITICAL: Validate workspace isolation
+        // Both stories must belong to the same story map
+        const sourceStoryMapId = sourceStory.step.journey.storyMapId;
+        const targetStoryMapId = targetStory.step.journey.storyMapId;
+
+        if (sourceStoryMapId !== targetStoryMapId) {
+          throw new StoryLinkError(
+            'Cannot create dependency between stories from different story maps',
+          );
         }
 
         // Check for duplicate link
@@ -79,14 +113,17 @@ export class StoryLinksService extends BaseService {
             targetStoryId: createDto.target_story_id,
             linkType: createDto.link_type,
           },
-          include: {
-            targetStory: {
-              select: { id: true, title: true, status: true },
-            },
-          },
         });
 
-        return this.toResponseDto(storyLink);
+        // Return response with simplified target story info
+        return this.toResponseDto({
+          ...storyLink,
+          targetStory: {
+            id: targetStory.id,
+            title: targetStory.title,
+            status: targetStory.status,
+          },
+        });
       },
       'createStoryLink',
       { sourceStoryId, targetStoryId: createDto.target_story_id },

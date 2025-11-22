@@ -1,5 +1,6 @@
 
 import {ApiProperty} from '@nestjs/swagger'
+import {StoryMap} from './story-map.entity'
 import {StoryPersona} from './story-persona.entity'
 
 
@@ -8,6 +9,10 @@ export class Persona {
   type: 'string',
 })
 id: string ;
+@ApiProperty({
+  type: 'string',
+})
+storyMapId: string ;
 @ApiProperty({
   type: 'string',
 })
@@ -26,6 +31,25 @@ avatarUrl: string  | null;
   format: 'date-time',
 })
 createdAt: Date ;
+@ApiProperty({
+  type: 'string',
+  format: 'date-time',
+})
+updatedAt: Date ;
+@ApiProperty({
+  type: 'string',
+})
+createdBy: string ;
+@ApiProperty({
+  type: 'string',
+  nullable: true,
+})
+updatedBy: string  | null;
+@ApiProperty({
+  type: () => StoryMap,
+  required: false,
+})
+storyMap?: StoryMap ;
 @ApiProperty({
   type: () => StoryPersona,
   isArray: true,

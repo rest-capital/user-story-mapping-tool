@@ -7,6 +7,7 @@ import { releaseFixtures } from '../fixtures/release.fixture';
  *
  * @param app - NestJS application instance
  * @param token - JWT auth token
+ * @param storyMapId - Story map ID (workspace scoping)
  * @param name - Optional custom name (defaults to unique generated name)
  * @param description - Optional description
  * @returns Promise<any> - Created release object
@@ -14,12 +15,13 @@ import { releaseFixtures } from '../fixtures/release.fixture';
 export async function createRelease(
   app: INestApplication,
   token: string,
+  storyMapId: string,
   name?: string,
   description?: string,
 ): Promise<any> {
   const data = name
-    ? releaseFixtures.withName(name)
-    : releaseFixtures.minimal();
+    ? releaseFixtures.withName(storyMapId, name)
+    : releaseFixtures.minimal(storyMapId);
 
   if (description !== undefined) {
     data.description = description;
@@ -38,18 +40,20 @@ export async function createRelease(
  *
  * @param app - NestJS application instance
  * @param token - JWT auth token
+ * @param storyMapId - Story map ID (workspace scoping)
  * @param count - Number of releases to create
  * @returns Promise<any[]> - Array of created release objects
  */
 export async function createReleases(
   app: INestApplication,
   token: string,
+  storyMapId: string,
   count: number,
 ): Promise<any[]> {
   const releases = [];
 
   for (let i = 0; i < count; i++) {
-    const release = await createRelease(app, token, `Release ${i + 1}`);
+    const release = await createRelease(app, token, storyMapId, `Release ${i + 1}`);
     releases.push(release);
   }
 
@@ -61,14 +65,16 @@ export async function createReleases(
  *
  * @param app - NestJS application instance
  * @param token - JWT auth token
+ * @param storyMapId - Story map ID (workspace scoping)
  * @returns Promise<any> - Unassigned release object
  */
 export async function getUnassignedRelease(
   app: INestApplication,
   token: string,
+  storyMapId: string,
 ): Promise<any> {
   const response = await authenticatedRequest(app, token)
-    .get('/api/releases')
+    .get(`/api/releases?story_map_id=${storyMapId}`)
     .expect(200);
 
   const unassigned = response.body.find((r: any) => r.is_unassigned === true);

@@ -19,10 +19,12 @@ import request from 'supertest';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import { tagFixtures } from './fixtures/tag.fixture';
+import { createStoryMap } from './factories';
 
 describe('Tags (E2E) - Tier 1', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -32,6 +34,7 @@ describe('Tags (E2E) - Tier 1', () => {
     // Auth token is created fresh for each test
     // Database cleanup happens in global setup.ts
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -40,7 +43,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
   describe('POST /api/tags', () => {
     it('should create a tag with valid data', async () => {
-      const tagData = tagFixtures.minimal();
+      const tagData = tagFixtures.minimal(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/tags')
@@ -50,14 +53,14 @@ describe('Tags (E2E) - Tier 1', () => {
       // Verify response structure
       expect(response.body).toMatchObject({
         id: expect.any(String),
+        story_map_id: storyMap.id,
         name: tagData.name,
-        color: tagData.color,
         created_at: expect.any(String),
       });
     });
 
     it('should reject unauthenticated requests', async () => {
-      const tagData = tagFixtures.minimal();
+      const tagData = tagFixtures.minimal(storyMap.id);
 
       await request(app.getHttpServer())
         .post('/api/tags')
@@ -66,7 +69,7 @@ describe('Tags (E2E) - Tier 1', () => {
     });
 
     it('should reject invalid data (empty name)', async () => {
-      const invalidData = tagFixtures.invalidEmpty();
+      const invalidData = tagFixtures.invalidEmpty(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/tags')
@@ -81,9 +84,9 @@ describe('Tags (E2E) - Tier 1', () => {
   describe('GET /api/tags', () => {
     it('should list all tags', async () => {
       // Create multiple tags
-      const tag1Data = tagFixtures.withName('Frontend');
-      const tag2Data = tagFixtures.withName('Backend');
-      const tag3Data = tagFixtures.withName('Bug');
+      const tag1Data = tagFixtures.withName(storyMap.id, 'Frontend');
+      const tag2Data = tagFixtures.withName(storyMap.id, 'Backend');
+      const tag3Data = tagFixtures.withName(storyMap.id, 'Bug');
 
       await authenticatedRequest(app, authToken)
         .post('/api/tags')
@@ -102,7 +105,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
       // Get all tags
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/tags')
+        .get(`/api/tags?story_map_id=${storyMap.id}`)
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
@@ -117,7 +120,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
     it('should return empty array when no tags exist', async () => {
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/tags')
+        .get(`/api/tags?story_map_id=${storyMap.id}`)
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
@@ -127,7 +130,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
   describe('GET /api/tags/:id', () => {
     it('should get a single tag by ID', async () => {
-      const tagData = tagFixtures.withName('Test Tag');
+      const tagData = tagFixtures.withName(storyMap.id, 'Test Tag');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/tags')
@@ -144,7 +147,6 @@ describe('Tags (E2E) - Tier 1', () => {
       expect(response.body).toMatchObject({
         id: tag.id,
         name: 'Test Tag',
-        color: tagData.color,
       });
     });
 
@@ -159,7 +161,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
   describe('PATCH /api/tags/:id', () => {
     it('should reject UPDATE operations (tags are immutable)', async () => {
-      const tagData = tagFixtures.withName('Immutable Tag');
+      const tagData = tagFixtures.withName(storyMap.id, 'Immutable Tag');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/tags')
@@ -178,7 +180,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
   describe('DELETE /api/tags/:id', () => {
     it('should delete a tag', async () => {
-      const tagData = tagFixtures.withName('Tag to Delete');
+      const tagData = tagFixtures.withName(storyMap.id, 'Tag to Delete');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/tags')

@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -69,22 +70,22 @@ export class JourneysController {
   }
 
   /**
-   * Get all journeys
-   * GET /journeys
+   * Get all journeys for a story map
+   * GET /journeys?story_map_id={id}
    */
   @Get()
-  @ApiOperation({ summary: 'Get all journeys sorted by sort order' })
+  @ApiOperation({ summary: 'Get all journeys sorted by sort order (workspace-scoped)' })
   @ApiResponse({
     status: 200,
-    description: 'List of all journeys',
+    description: 'List of all journeys for the story map',
     type: [JourneyResponseDto],
   })
   @ApiResponse({
     status: 401,
     description: 'Unauthorized - invalid or missing JWT token',
   })
-  async findAll(): Promise<JourneyResponseDto[]> {
-    return this.journeysService.findAll();
+  async findAll(@Query('story_map_id') storyMapId: string): Promise<JourneyResponseDto[]> {
+    return this.journeysService.findAll(storyMapId);
   }
 
   /**

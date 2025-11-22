@@ -7,62 +7,46 @@ export const tagFixtures = {
   /**
    * Minimal valid tag
    */
-  minimal: () => ({
+  minimal: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Tag'),
-    color: '#3B82F6',
   }),
 
   /**
    * Tag with custom name
    */
-  withName: (name: string) => ({
+  withName: (storyMapId: string, name: string) => ({
+    story_map_id: storyMapId,
     name,
-    color: '#3B82F6',
-  }),
-
-  /**
-   * Tag with custom color
-   */
-  withColor: (color: string) => ({
-    name: generateUniqueName('Tag'),
-    color,
-  }),
-
-  /**
-   * Complete tag with name and color
-   */
-  complete: (name: string, color: string) => ({
-    name,
-    color,
   }),
 
   /**
    * Tag with empty name (for validation testing)
    */
-  invalidEmpty: () => ({
+  invalidEmpty: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: '',
-    color: '#3B82F6',
   }),
 
   /**
    * Common tag presets
    */
   presets: {
-    frontend: () => ({
+    frontend: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Frontend',
-      color: '#3B82F6',
     }),
-    backend: () => ({
+    backend: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Backend',
-      color: '#10B981',
     }),
-    bug: () => ({
+    bug: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Bug',
-      color: '#EF4444',
     }),
-    feature: () => ({
+    feature: (storyMapId: string) => ({
+      story_map_id: storyMapId,
       name: 'Feature',
-      color: '#8B5CF6',
     }),
   },
 };

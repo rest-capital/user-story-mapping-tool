@@ -17,9 +17,31 @@ const prisma = new PrismaClient({
 async function main() {
   console.log('🌱 Starting database seeding...');
 
+  // Check if default StoryMap exists
+  let defaultStoryMap = await prisma.storyMap.findFirst({
+    where: { name: 'Default Workspace' },
+  });
+
+  if (!defaultStoryMap) {
+    console.log('Creating default StoryMap...');
+    defaultStoryMap = await prisma.storyMap.create({
+      data: {
+        name: 'Default Workspace',
+        description: 'Default workspace for getting started',
+        createdBy: 'system',
+      },
+    });
+    console.log('✅ Created default StoryMap:', defaultStoryMap.name);
+  } else {
+    console.log('✅ Default StoryMap already exists:', defaultStoryMap.name);
+  }
+
   // Check if Unassigned release already exists
   const existingUnassigned = await prisma.release.findFirst({
-    where: { isUnassigned: true },
+    where: {
+      isUnassigned: true,
+      storyMapId: defaultStoryMap.id,
+    },
   });
 
   if (existingUnassigned) {
@@ -30,10 +52,11 @@ async function main() {
   // Create the special "Unassigned" release
   const unassignedRelease = await prisma.release.create({
     data: {
+      storyMapId: defaultStoryMap.id,
       name: 'Unassigned',
       description: 'Default release for unassigned stories',
       isUnassigned: true,
-      sortOrder: 999999, // Always at the bottom
+      sortOrder: 0, // Always at the top
       createdBy: 'system',
       shipped: false,
     },
