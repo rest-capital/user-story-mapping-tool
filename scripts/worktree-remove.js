@@ -64,7 +64,10 @@ function execCommand(command, options = {}) {
 }
 
 function getWorktreePath(branchName) {
-  const worktreeBase = path.join(process.cwd(), '.worktrees');
+  // Use the actual worktree structure from bare repository setup
+  // Worktrees are at ~/code/user-story-mapping-tool/{branch-name}
+  const homeDir = process.env.HOME || process.env.USERPROFILE;
+  const worktreeBase = path.join(homeDir, 'code', 'user-story-mapping-tool');
   return path.join(worktreeBase, branchName);
 }
 
@@ -79,9 +82,14 @@ function verifyWorktreeExists(worktreePath) {
     log.error(`Worktree not found: ${worktreePath}`);
     log.info('Available worktrees:');
 
-    const worktreeBase = path.join(process.cwd(), '.worktrees');
+    const homeDir = process.env.HOME || process.env.USERPROFILE;
+    const worktreeBase = path.join(homeDir, 'code', 'user-story-mapping-tool');
     if (fs.existsSync(worktreeBase)) {
-      const worktrees = fs.readdirSync(worktreeBase);
+      const worktrees = fs.readdirSync(worktreeBase).filter(wt => {
+        // Filter out main worktree and any non-directories
+        const fullPath = path.join(worktreeBase, wt);
+        return fs.statSync(fullPath).isDirectory() && wt !== 'main';
+      });
       if (worktrees.length > 0) {
         worktrees.forEach(wt => log.info(`  - ${wt}`));
       } else {
