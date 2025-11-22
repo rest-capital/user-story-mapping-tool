@@ -38,7 +38,8 @@
     "worktree:list": "bash hack/worktree-list.sh",
     "local:start": "node scripts/smart-start.js",
     "local:stop": "node scripts/smart-stop.js",
-    "local:restart": "node scripts/smart-restart.js"
+    "local:restart": "node scripts/smart-restart.js",
+    "local:rebuild": "docker compose build --no-cache && node scripts/smart-start.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
