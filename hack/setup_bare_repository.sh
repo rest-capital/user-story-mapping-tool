@@ -115,6 +115,29 @@ else
   echo -e "${GREEN}✅ Main worktree created at: ${MAIN_WORKTREE}${NC}"
 fi
 
+# Create symlink to shared thoughts directory in main worktree
+THOUGHTS_TARGET="${HOME}/thoughts/repos/user-story-mapping-tool"
+echo ""
+echo -e "${BLUE}📚 Setting up shared thoughts directory...${NC}"
+
+if [ -d "$THOUGHTS_TARGET" ]; then
+  cd "$MAIN_WORKTREE"
+  if [ -L "thoughts" ]; then
+    echo -e "${YELLOW}⚠️  Thoughts symlink already exists${NC}"
+  elif [ -d "thoughts" ]; then
+    echo -e "${YELLOW}⚠️  thoughts/ directory exists (not a symlink)${NC}"
+    echo -e "${YELLOW}   You may want to backup and remove it manually${NC}"
+  else
+    ln -s "$THOUGHTS_TARGET" thoughts
+    echo -e "${GREEN}✅ Thoughts symlink created in main worktree${NC}"
+  fi
+  cd "$BARE_REPO"
+else
+  echo -e "${YELLOW}⚠️  HumanLayer thoughts directory not found at:${NC}"
+  echo -e "${YELLOW}   ${THOUGHTS_TARGET}${NC}"
+  echo -e "${YELLOW}   Run 'humanlayer thoughts sync' to initialize${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  ✅ Bare Repository Setup Complete!${NC}"

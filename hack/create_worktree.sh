@@ -150,6 +150,27 @@ if [ -f "${MAIN_WORKTREE}/.claude/settings.local.json" ]; then
   cp "${MAIN_WORKTREE}/.claude/settings.local.json" .claude/
 fi
 
+# Create symlink to shared thoughts directory
+THOUGHTS_TARGET="${HOME}/thoughts/repos/user-story-mapping-tool"
+echo "📚 Setting up shared thoughts directory..."
+
+if [ -d "$THOUGHTS_TARGET" ]; then
+  if [ -L "thoughts" ]; then
+    echo "   ℹ️  Thoughts symlink already exists"
+  elif [ -d "thoughts" ]; then
+    echo "   ⚠️  Warning: thoughts/ directory exists (not a symlink)"
+    echo "   You may want to remove it and re-run this script"
+  else
+    ln -s "$THOUGHTS_TARGET" thoughts
+    echo "   ✅ Thoughts symlink created"
+  fi
+else
+  echo "   ⚠️  HumanLayer thoughts directory not found"
+  echo "   Expected: ${THOUGHTS_TARGET}"
+  echo "   💡 Run 'humanlayer thoughts sync' from main worktree first"
+fi
+echo ""
+
 # Initialize backend environment
 if [ -f "apps/backend/.env.example" ]; then
   echo "🔧 Setting up backend environment..."
