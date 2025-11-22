@@ -38,12 +38,11 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 # Generate Prisma client
-# This is required before building TypeScript
+# This is required before TypeScript can use it
 RUN pnpm --filter @user-story-mapping/backend exec prisma generate
 
-# Build TypeScript (required for nodemon)
-# This project uses tsc --watch + nodemon (not nest-cli)
-RUN pnpm --filter @user-story-mapping/backend build
+# Skip pre-build in development - use ts-node for hot reload
+# Build will happen on-demand by NestJS dev server
 
 # Expose backend port
 EXPOSE 3000
