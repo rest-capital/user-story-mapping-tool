@@ -16,6 +16,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { User } from '@supabase/supabase-js';
 import { JourneysService } from './journeys.service';
@@ -157,6 +159,17 @@ export class JourneysController {
   @ApiOperation({
     summary: 'Delete a journey (cascades to steps and stories)',
   })
+  @ApiParam({
+    name: 'id',
+    description: 'Journey ID',
+    type: 'string',
+  })
+  @ApiQuery({
+    name: 'story_map_id',
+    description: 'Story Map ID (workspace context)',
+    type: 'string',
+    required: true,
+  })
   @ApiResponse({
     status: 200,
     description: 'Journey deleted successfully',
@@ -173,10 +186,13 @@ export class JourneysController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Journey not found',
+    description: 'Journey not found or not in specified workspace',
   })
-  async remove(@Param('id') id: string): Promise<{ success: boolean }> {
-    return this.journeysService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Query('story_map_id') storyMapId: string,
+  ): Promise<{ success: boolean }> {
+    return this.journeysService.remove(id, storyMapId);
   }
 
   /**

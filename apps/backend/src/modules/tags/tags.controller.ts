@@ -14,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { TagsService } from './tags.service';
 import { CreateTagDto } from './dto/create-tag.dto';
@@ -101,6 +102,12 @@ export class TagsController {
     description: 'Tag UUID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
+  @ApiQuery({
+    name: 'story_map_id',
+    description: 'Story Map ID (workspace context)',
+    type: 'string',
+    required: true,
+  })
   @ApiResponse({
     status: 200,
     description: 'Tag deleted successfully',
@@ -113,9 +120,12 @@ export class TagsController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Tag not found',
+    description: 'Tag not found or not in specified workspace',
   })
-  async remove(@Param('id') id: string): Promise<{ success: boolean }> {
-    return this.tagsService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Query('story_map_id') storyMapId: string,
+  ): Promise<{ success: boolean }> {
+    return this.tagsService.remove(id, storyMapId);
   }
 }

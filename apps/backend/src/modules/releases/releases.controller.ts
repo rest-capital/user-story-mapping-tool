@@ -14,6 +14,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ReleasesService } from './releases.service';
 import { StoriesService } from '../stories/stories.service';
@@ -125,6 +126,12 @@ export class ReleasesController {
     description:
       'Deletes a release and moves all associated stories to the Unassigned release. Cannot delete the Unassigned release itself.',
   })
+  @ApiQuery({
+    name: 'story_map_id',
+    description: 'Story Map ID (workspace context)',
+    type: 'string',
+    required: true,
+  })
   @ApiResponse({
     status: 200,
     description: 'Release deleted successfully',
@@ -137,7 +144,7 @@ export class ReleasesController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Release not found',
+    description: 'Release not found or not in specified workspace',
   })
   @ApiResponse({
     status: 400,
@@ -147,8 +154,11 @@ export class ReleasesController {
     status: 401,
     description: 'Unauthorized',
   })
-  remove(@Param('id') id: string): Promise<{ success: boolean; stories_moved: number }> {
-    return this.releasesService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @Query('story_map_id') storyMapId: string,
+  ): Promise<{ success: boolean; stories_moved: number }> {
+    return this.releasesService.remove(id, storyMapId);
   }
 
   /**

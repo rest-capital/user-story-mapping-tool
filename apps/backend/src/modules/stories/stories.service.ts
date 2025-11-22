@@ -257,11 +257,23 @@ export class StoriesService extends BaseService {
       async () => {
         const story = await this.prisma.story.findUnique({
           where: { id },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!story) {
           throw new StoryError('Story not found');
         }
+
+        // Get current story map ID for workspace validation
+        const currentStoryMapId = story.step.journey.storyMapId;
 
         // CRITICAL: Conditional assignment to prevent undefined overwrites
         // Transform snake_case DTO → camelCase Prisma
@@ -279,10 +291,22 @@ export class StoriesService extends BaseService {
           // Validate step exists
           const step = await this.prisma.step.findUnique({
             where: { id: updateDto.step_id },
+            include: {
+              journey: {
+                select: { storyMapId: true },
+              },
+            },
           });
           if (!step) {
             throw new StoryError('Target step not found');
           }
+
+          // CRITICAL: Validate workspace isolation
+          // Return "not found" to avoid leaking info about other workspaces
+          if (step.journey.storyMapId !== currentStoryMapId) {
+            throw new StoryError('Target step not found');
+          }
+
           updateData.stepId = updateDto.step_id;
         }
 
@@ -294,6 +318,13 @@ export class StoriesService extends BaseService {
           if (!release) {
             throw new StoryError('Target release not found');
           }
+
+          // CRITICAL: Validate workspace isolation
+          // Return "not found" to avoid leaking info about other workspaces
+          if (release.storyMapId !== currentStoryMapId) {
+            throw new StoryError('Target release not found');
+          }
+
           updateData.releaseId = updateDto.release_id;
         }
 
@@ -331,17 +362,32 @@ export class StoriesService extends BaseService {
    * CRITICAL: Delete story with dependency cleanup
    * Must handle all relationships in correct order using transaction
    */
-  async remove(id: string): Promise<{ success: boolean; dependencies_removed: number }> {
+  async remove(id: string, storyMapId: string): Promise<{ success: boolean; dependencies_removed: number }> {
     this.validateRequired(id, 'id', 'Story');
+    this.validateRequired(storyMapId, 'storyMapId', 'Story');
 
     return this.executeInTransaction(
       async (tx) => {
-        // Verify story exists
+        // Verify story exists and fetch workspace context
         const story = await tx.story.findUnique({
           where: { id },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!story) {
+          throw new StoryError('Story not found');
+        }
+
+        // CRITICAL: Validate workspace ownership
+        if (story.step.journey.storyMapId !== storyMapId) {
           throw new StoryError('Story not found');
         }
 
@@ -388,7 +434,7 @@ export class StoriesService extends BaseService {
         };
       },
       'deleteStory',
-      { storyId: id },
+      { storyId: id, storyMapId },
     );
   }
 
@@ -450,10 +496,9 @@ export class StoriesService extends BaseService {
           }
 
           // CRITICAL: Validate workspace isolation
+          // Return "not found" to avoid leaking info about other workspaces
           if (step.journey.storyMapId !== currentStoryMapId) {
-            throw new StoryError(
-              'Cannot move story to step from different story map',
-            );
+            throw new StoryError('Target step not found');
           }
         }
 
@@ -467,10 +512,9 @@ export class StoriesService extends BaseService {
           }
 
           // CRITICAL: Validate workspace isolation
+          // Return "not found" to avoid leaking info about other workspaces
           if (release.storyMapId !== currentStoryMapId) {
-            throw new StoryError(
-              'Cannot move story to release from different story map',
-            );
+            throw new StoryError('Target release not found');
           }
         }
 
@@ -552,14 +596,25 @@ export class StoriesService extends BaseService {
 
     return this.executeOperation(
       async () => {
-        // Verify story exists
+        // Verify story exists and get workspace context
         const story = await this.prisma.story.findUnique({
           where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!story) {
           throw new StoryError('Story not found');
         }
+
+        const storyWorkspaceId = story.step.journey.storyMapId;
 
         // Verify tag exists
         const tag = await this.prisma.tag.findUnique({
@@ -567,6 +622,11 @@ export class StoriesService extends BaseService {
         });
 
         if (!tag) {
+          throw new StoryError('Tag not found');
+        }
+
+        // CRITICAL: Validate workspace isolation
+        if (tag.storyMapId !== storyWorkspaceId) {
           throw new StoryError('Tag not found');
         }
 
@@ -647,14 +707,25 @@ export class StoriesService extends BaseService {
 
     return this.executeOperation(
       async () => {
-        // Verify story exists
+        // Verify story exists and get workspace context
         const story = await this.prisma.story.findUnique({
           where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!story) {
           throw new StoryError('Story not found');
         }
+
+        const storyWorkspaceId = story.step.journey.storyMapId;
 
         // Verify persona exists
         const persona = await this.prisma.persona.findUnique({
@@ -662,6 +733,11 @@ export class StoriesService extends BaseService {
         });
 
         if (!persona) {
+          throw new StoryError('Persona not found');
+        }
+
+        // CRITICAL: Validate workspace isolation
+        if (persona.storyMapId !== storyWorkspaceId) {
           throw new StoryError('Persona not found');
         }
 

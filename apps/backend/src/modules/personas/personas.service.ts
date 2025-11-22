@@ -154,8 +154,9 @@ export class PersonasService extends BaseService {
    * Delete a persona
    * Cascade delete removes from all stories automatically
    */
-  async remove(id: string): Promise<{ success: boolean }> {
+  async remove(id: string, storyMapId: string): Promise<{ success: boolean }> {
     this.validateRequired(id, 'id', 'Persona');
+    this.validateRequired(storyMapId, 'storyMapId', 'Persona');
 
     return this.executeOperation(
       async () => {
@@ -167,6 +168,11 @@ export class PersonasService extends BaseService {
           throw new PersonaError('Persona not found');
         }
 
+        // CRITICAL: Validate workspace ownership
+        if (persona.storyMapId !== storyMapId) {
+          throw new PersonaError('Persona not found');
+        }
+
         // Database cascade will remove from StoryPersona junction table
         await this.prisma.persona.delete({
           where: { id },
@@ -175,7 +181,7 @@ export class PersonasService extends BaseService {
         return { success: true };
       },
       'deletePersona',
-      { personaId: id },
+      { personaId: id, storyMapId },
     );
   }
 

@@ -122,8 +122,9 @@ export class TagsService extends BaseService {
    * Delete a tag
    * Cascade delete removes from all stories automatically
    */
-  async remove(id: string): Promise<{ success: boolean }> {
+  async remove(id: string, storyMapId: string): Promise<{ success: boolean }> {
     this.validateRequired(id, 'id', 'Tag');
+    this.validateRequired(storyMapId, 'storyMapId', 'Tag');
 
     return this.executeOperation(
       async () => {
@@ -135,6 +136,11 @@ export class TagsService extends BaseService {
           throw new TagError('Tag not found');
         }
 
+        // CRITICAL: Validate workspace ownership
+        if (tag.storyMapId !== storyMapId) {
+          throw new TagError('Tag not found');
+        }
+
         // Database cascade will remove from StoryTag junction table
         await this.prisma.tag.delete({
           where: { id },
@@ -143,7 +149,7 @@ export class TagsService extends BaseService {
         return { success: true };
       },
       'deleteTag',
-      { tagId: id },
+      { tagId: id, storyMapId },
     );
   }
 

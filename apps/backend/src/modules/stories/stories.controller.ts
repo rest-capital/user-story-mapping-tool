@@ -15,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { StoriesService } from './stories.service';
 import { CreateStoryDto } from './dto/create-story.dto';
@@ -155,6 +156,12 @@ export class StoriesController {
     description: 'Story UUID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
+  @ApiQuery({
+    name: 'story_map_id',
+    description: 'Story Map ID (workspace context)',
+    type: 'string',
+    required: true,
+  })
   @ApiResponse({
     status: 200,
     description: 'Story deleted successfully',
@@ -168,12 +175,13 @@ export class StoriesController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Story not found',
+    description: 'Story not found or not in specified workspace',
   })
   async remove(
     @Param('id') id: string,
+    @Query('story_map_id') storyMapId: string,
   ): Promise<{ success: boolean; dependencies_removed: number }> {
-    return this.storiesService.remove(id);
+    return this.storiesService.remove(id, storyMapId);
   }
 
   /**

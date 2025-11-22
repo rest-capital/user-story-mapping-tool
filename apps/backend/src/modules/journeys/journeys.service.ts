@@ -171,18 +171,25 @@ export class JourneysService extends BaseService {
   /**
    * Delete a journey
    * CRITICAL: Cascades to steps and stories
+   * SECURITY: Validates workspace ownership before deletion
    */
-  async remove(id: string): Promise<{ success: boolean }> {
+  async remove(id: string, storyMapId: string): Promise<{ success: boolean }> {
     this.validateRequired(id, 'id', 'Journey');
+    this.validateRequired(storyMapId, 'storyMapId', 'Journey');
 
     return this.executeOperation(
       async () => {
-        // Verify journey exists
+        // Verify journey exists and belongs to the specified workspace
         const existing = await this.prisma.journey.findUnique({
           where: { id },
         });
 
         if (!existing) {
+          throw new JourneyError('Journey not found');
+        }
+
+        // CRITICAL: Validate workspace ownership
+        if (existing.storyMapId !== storyMapId) {
           throw new JourneyError('Journey not found');
         }
 
@@ -194,7 +201,7 @@ export class JourneysService extends BaseService {
         return { success: true };
       },
       'deleteJourney',
-      { journeyId: id },
+      { journeyId: id, storyMapId },
     );
   }
 

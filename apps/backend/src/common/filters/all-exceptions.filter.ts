@@ -61,7 +61,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         lowerMessage.includes('cannot')
       ) {
         status = HttpStatus.BAD_REQUEST;
-      } else if (lowerMessage.includes('already exists')) {
+      } else if (
+        lowerMessage.includes('already exists') ||
+        lowerMessage.includes('already associated')
+      ) {
         status = HttpStatus.CONFLICT;
       } else if (lowerMessage.includes('unauthorized')) {
         status = HttpStatus.UNAUTHORIZED;

@@ -6,9 +6,13 @@
  * - Add tags and personas to existing story
  * - Move story and verify all associations intact
  * - Delete journey and verify all nested entities removed
+ * - Service validation (404 for non-existent entities)
+ * - Edge cases (duplicates, performance, complex scenarios)
+ * - Workspace isolation (CRITICAL SECURITY - cross-workspace operations)
  *
  * Following patterns from E2E_TESTING_STRATEGY.md Tier 2.7
  * REFACTORED: Using factory pattern for entity creation
+ * STATUS: EXCELLENT (14 tests) - Comprehensive workflow coverage
  */
 
 import { INestApplication } from '@nestjs/common';
@@ -281,9 +285,9 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
         title: 'Story 2',
       });
 
-      // Delete journey
+      // Delete journey (requires story_map_id for workspace validation)
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/journeys/${journey.id}`)
+        .delete(`/api/journeys/${journey.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       expect(deleteResponse.body.success).toBe(true);
@@ -315,6 +319,337 @@ describe('Multi-Entity Workflows (E2E) - Tier 2.7', () => {
       await authenticatedRequest(app, authToken)
         .get(`/api/releases/${release.id}`)
         .expect(200);
+    });
+  });
+
+  // ==================== SERVICE VALIDATION TESTS ====================
+  describe('Service Validation - Non-existent entities', () => {
+    it('should return 404 when adding tag to non-existent story', async () => {
+      const tag = await createTag(app, authToken, storyMap.id, 'Test Tag');
+      const fakeStoryId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${fakeStoryId}/tags`)
+        .send({ tag_id: tag.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+
+    it('should return 404 when adding persona to non-existent story', async () => {
+      const persona = await createPersona(app, authToken, storyMap.id, 'Test Persona');
+      const fakeStoryId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${fakeStoryId}/personas`)
+        .send({ persona_id: persona.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+
+    it('should return 404 when moving non-existent story', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
+      const fakeStoryId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${fakeStoryId}/move`)
+        .send({ step_id: step.id, release_id: release.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+
+    it('should return 404 when creating dependency with non-existent target story', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Source Story',
+      });
+
+      const fakeTargetId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/dependencies`)
+        .send({
+          target_story_id: fakeTargetId,
+          link_type: 'IS_BLOCKED_BY',
+        })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+  });
+
+  // ==================== EDGE CASES ====================
+  describe('Edge Cases', () => {
+    it('should prevent duplicate tag associations (idempotent operation)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Test Story',
+      });
+
+      const tag = await createTag(app, authToken, storyMap.id, 'Test Tag');
+
+      // Add tag first time - should succeed
+      await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/tags`)
+        .send({ tag_id: tag.id })
+        .expect(201);
+
+      // Add same tag again - should return 409 conflict
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/tags`)
+        .send({ tag_id: tag.id })
+        .expect(409);
+
+      expect(response.body.message).toMatch(/already/i);
+    });
+
+    it('should prevent duplicate persona associations (idempotent operation)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Test Story',
+      });
+
+      const persona = await createPersona(app, authToken, storyMap.id, 'Test Persona');
+
+      // Add persona first time - should succeed
+      await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/personas`)
+        .send({ persona_id: persona.id })
+        .expect(201);
+
+      // Add same persona again - should return 409 conflict
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/personas`)
+        .send({ persona_id: persona.id })
+        .expect(409);
+
+      expect(response.body.message).toMatch(/already/i);
+    });
+
+    it('should handle story with many associations (performance test)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await createRelease(app, authToken, storyMap.id, 'Test Release');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Story with Many Associations',
+      });
+
+      // Create and add 5 tags
+      const tags = await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          createTag(app, authToken, storyMap.id, `Tag ${i + 1}`)
+        )
+      );
+
+      for (const tag of tags) {
+        await authenticatedRequest(app, authToken)
+          .post(`/api/stories/${story.id}/tags`)
+          .send({ tag_id: tag.id })
+          .expect(201);
+      }
+
+      // Create and add 5 personas
+      const personas = await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          createPersona(app, authToken, storyMap.id, `Persona ${i + 1}`)
+        )
+      );
+
+      for (const persona of personas) {
+        await authenticatedRequest(app, authToken)
+          .post(`/api/stories/${story.id}/personas`)
+          .send({ persona_id: persona.id })
+          .expect(201);
+      }
+
+      // Create and add 3 dependencies
+      const dependencyStories = await Promise.all(
+        Array.from({ length: 3 }, (_, i) =>
+          createStory(app, authToken, step.id, release.id, {
+            title: `Dependency Story ${i + 1}`,
+          })
+        )
+      );
+
+      for (const depStory of dependencyStories) {
+        await authenticatedRequest(app, authToken)
+          .post(`/api/stories/${story.id}/dependencies`)
+          .send({
+            target_story_id: depStory.id,
+            link_type: 'IS_BLOCKED_BY',
+          })
+          .expect(201);
+      }
+
+      // Verify all associations are fetched correctly
+      const storyTags = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}/tags`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyTags).toHaveLength(5);
+
+      const storyPersonas = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}/personas`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyPersonas).toHaveLength(5);
+
+      const storyDeps = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}/dependencies`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyDeps.outgoing).toHaveLength(3);
+    });
+  });
+
+  // ==================== WORKSPACE ISOLATION TESTS ====================
+  describe('Workspace Isolation - CRITICAL SECURITY', () => {
+    let authToken2: string;
+
+    beforeEach(async () => {
+      authToken2 = await createAuthToken(app);
+    });
+
+    it('should prevent adding tag from another workspace to story', async () => {
+      // User 1: Create story in workspace 1
+      const journey = await createJourney(app, authToken, storyMap.id, 'Journey 1');
+      const step = await createStep(app, authToken, journey.id, 'Step 1');
+      const release = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Story in Workspace 1',
+      });
+
+      // User 2: Create tag in workspace 2
+      const storyMap2 = await createStoryMap(app, authToken2);
+      const tagFromWorkspace2 = await createTag(app, authToken2, storyMap2.id, 'Tag from WS2');
+
+      // User 1: Try to add tag from workspace 2 to their story
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/tags`)
+        .send({ tag_id: tagFromWorkspace2.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify tag was NOT added
+      const storyTags = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}/tags`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyTags).toHaveLength(0);
+    });
+
+    it('should prevent adding persona from another workspace to story', async () => {
+      // User 1: Create story in workspace 1
+      const journey = await createJourney(app, authToken, storyMap.id, 'Journey 1');
+      const step = await createStep(app, authToken, journey.id, 'Step 1');
+      const release = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const story = await createStory(app, authToken, step.id, release.id, {
+        title: 'Story in Workspace 1',
+      });
+
+      // User 2: Create persona in workspace 2
+      const storyMap2 = await createStoryMap(app, authToken2);
+      const personaFromWorkspace2 = await createPersona(app, authToken2, storyMap2.id, 'Persona from WS2');
+
+      // User 1: Try to add persona from workspace 2 to their story
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/personas`)
+        .send({ persona_id: personaFromWorkspace2.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify persona was NOT added
+      const storyPersonas = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}/personas`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyPersonas).toHaveLength(0);
+    });
+
+    it('should prevent moving story to step from another workspace', async () => {
+      // User 1: Create story in workspace 1
+      const journey1 = await createJourney(app, authToken, storyMap.id, 'Journey 1');
+      const step1 = await createStep(app, authToken, journey1.id, 'Step 1');
+      const release1 = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const story = await createStory(app, authToken, step1.id, release1.id, {
+        title: 'Story in Workspace 1',
+      });
+
+      // User 2: Create step in workspace 2
+      const storyMap2 = await createStoryMap(app, authToken2);
+      const journey2 = await createJourney(app, authToken2, storyMap2.id, 'Journey 2');
+      const stepFromWorkspace2 = await createStep(app, authToken2, journey2.id, 'Step from WS2');
+
+      // User 1: Try to move their story to step from workspace 2
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story.id}/move`)
+        .send({ step_id: stepFromWorkspace2.id, release_id: release1.id })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify story did NOT move
+      const storyDetails = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(storyDetails.step_id).toBe(step1.id); // Still in original step
+    });
+
+    it('should prevent creating dependency with story from another workspace', async () => {
+      // User 1: Create story in workspace 1
+      const journey1 = await createJourney(app, authToken, storyMap.id, 'Journey 1');
+      const step1 = await createStep(app, authToken, journey1.id, 'Step 1');
+      const release1 = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const story1 = await createStory(app, authToken, step1.id, release1.id, {
+        title: 'Story in Workspace 1',
+      });
+
+      // User 2: Create story in workspace 2
+      const storyMap2 = await createStoryMap(app, authToken2);
+      const journey2 = await createJourney(app, authToken2, storyMap2.id, 'Journey 2');
+      const step2 = await createStep(app, authToken2, journey2.id, 'Step 2');
+      const release2 = await createRelease(app, authToken2, storyMap2.id, 'Release 2');
+      const storyFromWorkspace2 = await createStory(app, authToken2, step2.id, release2.id, {
+        title: 'Story in Workspace 2',
+      });
+
+      // User 1: Try to create dependency with story from workspace 2
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story1.id}/dependencies`)
+        .send({
+          target_story_id: storyFromWorkspace2.id,
+          link_type: 'IS_BLOCKED_BY',
+        })
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify dependency was NOT created
+      const deps = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story1.id}/dependencies`)
+        .expect(200)
+        .then(res => res.body);
+
+      expect(deps.outgoing).toHaveLength(0);
     });
   });
 });

@@ -195,8 +195,9 @@ export class ReleasesService extends BaseService {
    * CRITICAL: Cannot delete Unassigned release (business rule)
    * CRITICAL: Moves all stories to Unassigned FIRST (uses transaction)
    */
-  async remove(id: string): Promise<{ success: boolean; stories_moved: number }> {
+  async remove(id: string, storyMapId: string): Promise<{ success: boolean; stories_moved: number }> {
     this.validateRequired(id, 'id', 'Release');
+    this.validateRequired(storyMapId, 'storyMapId', 'Release');
 
     return this.executeInTransaction(
       async (tx) => {
@@ -206,6 +207,11 @@ export class ReleasesService extends BaseService {
         });
 
         if (!release) {
+          throw new ReleaseError('Release not found');
+        }
+
+        // CRITICAL: Validate workspace ownership
+        if (release.storyMapId !== storyMapId) {
           throw new ReleaseError('Release not found');
         }
 
@@ -245,7 +251,7 @@ export class ReleasesService extends BaseService {
         };
       },
       'deleteRelease',
-      { releaseId: id },
+      { releaseId: id, storyMapId },
     );
   }
 

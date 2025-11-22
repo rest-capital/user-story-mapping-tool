@@ -82,13 +82,12 @@ export class StoryLinksService extends BaseService {
 
         // CRITICAL: Validate workspace isolation
         // Both stories must belong to the same story map
+        // Return "not found" error to avoid leaking info about other workspaces
         const sourceStoryMapId = sourceStory.step.journey.storyMapId;
         const targetStoryMapId = targetStory.step.journey.storyMapId;
 
         if (sourceStoryMapId !== targetStoryMapId) {
-          throw new StoryLinkError(
-            'Cannot create dependency between stories from different story maps',
-          );
+          throw new StoryLinkError('Target story not found');
         }
 
         // Check for duplicate link

@@ -15,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { PersonasService } from './personas.service';
 import { CreatePersonaDto } from './dto/create-persona.dto';
@@ -130,6 +131,12 @@ export class PersonasController {
     description: 'Persona UUID',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
+  @ApiQuery({
+    name: 'story_map_id',
+    description: 'Story Map ID (workspace context)',
+    type: 'string',
+    required: true,
+  })
   @ApiResponse({
     status: 200,
     description: 'Persona deleted successfully',
@@ -142,9 +149,12 @@ export class PersonasController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Persona not found',
+    description: 'Persona not found or not in specified workspace',
   })
-  async remove(@Param('id') id: string): Promise<{ success: boolean }> {
-    return this.personasService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Query('story_map_id') storyMapId: string,
+  ): Promise<{ success: boolean }> {
+    return this.personasService.remove(id, storyMapId);
   }
 }

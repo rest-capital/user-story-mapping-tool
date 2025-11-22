@@ -1,5 +1,11 @@
 /**
- * Cascade Delete Workflows E2E Tests (Tier 2.6)
+ * Cascade Delete Workflows E2E Tests (Tier 2.6) - ENHANCED
+ *
+ * Coverage: 15 tests (EXCELLENT status)
+ * - Cascade Behavior: 6 tests (journey, step, release, story, tag, persona)
+ * - Service Validation: 3 tests (non-existent entities → 404)
+ * - Edge Cases: 3 tests (many stories, bidirectional deps, Unassigned protection)
+ * - Workspace Isolation: 3 tests (cross-workspace delete prevention)
  *
  * Tests cascade delete behavior across all entities:
  * - Journey deletion cascades to steps and stories
@@ -11,6 +17,7 @@
  *
  * Following patterns from E2E_TESTING_STRATEGY.md
  * REFACTORED: Using factory pattern for entity creation
+ * ENHANCED: Comprehensive validation and security tests (file 16/18 in E2E audit)
  */
 
 import { INestApplication } from '@nestjs/common';
@@ -63,7 +70,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete the journey
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/journeys/${journey.id}`)
+        .delete(`/api/journeys/${journey.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response
@@ -112,7 +119,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete the step
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/steps/${step.id}`)
+        .delete(`/api/steps/${step.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response
@@ -163,7 +170,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete the release
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/releases/${release.id}`)
+        .delete(`/api/releases/${release.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response includes stories_moved count
@@ -239,7 +246,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete story1
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/stories/${story1.id}`)
+        .delete(`/api/stories/${story1.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response includes dependencies_removed count
@@ -302,7 +309,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete the tag
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/tags/${tag.id}`)
+        .delete(`/api/tags/${tag.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response
@@ -367,7 +374,7 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       // Delete the persona
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/personas/${persona.id}`)
+        .delete(`/api/personas/${persona.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response
@@ -402,6 +409,251 @@ describe('Cascade Delete Workflows (E2E) - Tier 2.6', () => {
 
       expect(story1Personas).toEqual([]);
       expect(story2Personas).toEqual([]);
+    });
+  });
+
+  // ==================== SERVICE VALIDATION TESTS ====================
+
+  describe('Service Validation - Non-existent entities', () => {
+    it('should return 404 when deleting non-existent journey', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .delete(`/api/journeys/${fakeId}?story_map_id=${storyMap.id}`)
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+
+    it('should return 404 when deleting non-existent story', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .delete(`/api/stories/${fakeId}?story_map_id=${storyMap.id}`)
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+
+    it('should return 404 when deleting non-existent tag', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await authenticatedRequest(app, authToken)
+        .delete(`/api/tags/${fakeId}?story_map_id=${storyMap.id}`)
+        .expect(404);
+
+      expect(response.body.message).toMatch(/not found/i);
+    });
+  });
+
+  // ==================== EDGE CASES ====================
+
+  describe('Edge Cases', () => {
+    it('should delete journey with many stories (performance/cleanup verification)', async () => {
+      // Create journey with many stories to verify cleanup performance
+      const journey = await createJourney(app, authToken, storyMap.id, 'Large Journey');
+      const step1 = await createStep(app, authToken, journey.id, 'Step 1');
+      const step2 = await createStep(app, authToken, journey.id, 'Step 2');
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
+
+      // Create 10 stories across the steps
+      const stories = [];
+      for (let i = 1; i <= 10; i++) {
+        const step = i % 2 === 0 ? step1 : step2;
+        const story = await createStory(app, authToken, step.id, release.id, {
+          title: `Story ${i}`,
+        });
+        stories.push(story);
+      }
+
+      // Delete the journey
+      const deleteResponse = await authenticatedRequest(app, authToken)
+        .delete(`/api/journeys/${journey.id}?story_map_id=${storyMap.id}`)
+        .expect(200);
+
+      expect(deleteResponse.body).toMatchObject({
+        success: true,
+      });
+
+      // Verify all stories are gone
+      for (const story of stories) {
+        await authenticatedRequest(app, authToken)
+          .get(`/api/stories/${story.id}`)
+          .expect(404);
+      }
+
+      // Verify both steps are gone
+      await authenticatedRequest(app, authToken)
+        .get(`/api/steps/${step1.id}`)
+        .expect(404);
+
+      await authenticatedRequest(app, authToken)
+        .get(`/api/steps/${step2.id}`)
+        .expect(404);
+    });
+
+    it('should clean up bidirectional dependencies when deleting story', async () => {
+      // Create journey, step, release using factories
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Test Step');
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
+
+      // Create 3 stories
+      const story1 = await createStory(app, authToken, step.id, release.id, { title: 'Story 1' });
+      const story2 = await createStory(app, authToken, step.id, release.id, { title: 'Story 2' });
+      const story3 = await createStory(app, authToken, step.id, release.id, { title: 'Story 3' });
+
+      // Create bidirectional dependencies:
+      // story1 BLOCKS story2
+      await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story1.id}/dependencies`)
+        .send({
+          target_story_id: story2.id,
+          link_type: 'BLOCKS',
+        })
+        .expect(201);
+
+      // story2 IS_BLOCKED_BY story1 (reverse direction)
+      await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story2.id}/dependencies`)
+        .send({
+          target_story_id: story1.id,
+          link_type: 'IS_BLOCKED_BY',
+        })
+        .expect(201);
+
+      // story2 LINKED_TO story3
+      await authenticatedRequest(app, authToken)
+        .post(`/api/stories/${story2.id}/dependencies`)
+        .send({
+          target_story_id: story3.id,
+          link_type: 'LINKED_TO',
+        })
+        .expect(201);
+
+      // Delete story2 (which has both incoming and outgoing dependencies)
+      const deleteResponse = await authenticatedRequest(app, authToken)
+        .delete(`/api/stories/${story2.id}?story_map_id=${storyMap.id}`)
+        .expect(200);
+
+      // Should remove 3 dependencies total (2 where story2 is source, 1 where it's target)
+      expect(deleteResponse.body).toMatchObject({
+        success: true,
+        dependencies_removed: 3,
+      });
+
+      // Verify story2 is gone
+      await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story2.id}`)
+        .expect(404);
+
+      // Verify story1 and story3 still exist
+      await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story1.id}`)
+        .expect(200);
+
+      await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story3.id}`)
+        .expect(200);
+
+      // Verify story1's dependencies no longer reference story2
+      const story1Deps = await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story1.id}/dependencies`)
+        .expect(200)
+        .then(res => res.body);
+
+      // Dependencies endpoint returns {incoming: [], outgoing: []} structure
+      expect(story1Deps).toEqual({ incoming: [], outgoing: [] });
+    });
+
+    it('should prevent deleting Unassigned release (business rule)', async () => {
+      // Get the Unassigned release
+      const unassigned = await getUnassignedRelease(app, authToken, storyMap.id);
+
+      // Attempt to delete it should fail
+      const response = await authenticatedRequest(app, authToken)
+        .delete(`/api/releases/${unassigned.id}?story_map_id=${storyMap.id}`)
+        .expect(400);
+
+      expect(response.body.message).toMatch(/unassigned/i);
+
+      // Verify Unassigned release still exists
+      await authenticatedRequest(app, authToken)
+        .get(`/api/releases/${unassigned.id}`)
+        .expect(200);
+    });
+  });
+
+  // ==================== WORKSPACE ISOLATION TESTS ====================
+
+  describe('Workspace Isolation', () => {
+    it('should prevent deleting journey from another workspace', async () => {
+      // Create a journey in the current workspace
+      const journey = await createJourney(app, authToken, storyMap.id, 'My Journey');
+
+      // Create a second workspace with different auth
+      const authToken2 = await createAuthToken(app);
+      const storyMap2 = await createStoryMap(app, authToken2);
+
+      // Attempt to delete journey from workspace 1 using workspace 2's auth (should get 404)
+      const response = await authenticatedRequest(app, authToken2)
+        .delete(`/api/journeys/${journey.id}?story_map_id=${storyMap2.id}`)
+        .expect(404);
+
+      // Should get 404 because journey doesn't exist in workspace 2's context
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify journey still exists in workspace 1
+      await authenticatedRequest(app, authToken)
+        .get(`/api/journeys/${journey.id}`)
+        .expect(200);
+    });
+
+    it('should prevent deleting story from another workspace', async () => {
+      // Create a story in the current workspace
+      const journey = await createJourney(app, authToken, storyMap.id, 'My Journey');
+      const step = await createStep(app, authToken, journey.id, 'My Step');
+      const release = await getUnassignedRelease(app, authToken, storyMap.id);
+      const story = await createStory(app, authToken, step.id, release.id, { title: 'My Story' });
+
+      // Create a second workspace with different auth
+      const authToken2 = await createAuthToken(app);
+      const storyMap2 = await createStoryMap(app, authToken2);
+
+      // Attempt to delete story from workspace 1 using workspace 2's auth (should get 404)
+      const response = await authenticatedRequest(app, authToken2)
+        .delete(`/api/stories/${story.id}?story_map_id=${storyMap2.id}`)
+        .expect(404);
+
+      // Should get 404 because story doesn't exist in workspace 2's context
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify story still exists in workspace 1
+      await authenticatedRequest(app, authToken)
+        .get(`/api/stories/${story.id}`)
+        .expect(200);
+    });
+
+    it('should prevent deleting tag from another workspace', async () => {
+      // Create a tag in the current workspace
+      const tag = await createTag(app, authToken, storyMap.id);
+
+      // Create a second workspace with different auth
+      const authToken2 = await createAuthToken(app);
+      const storyMap2 = await createStoryMap(app, authToken2);
+
+      // Attempt to delete tag from workspace 1 using workspace 2's auth (should get 404)
+      const response = await authenticatedRequest(app, authToken2)
+        .delete(`/api/tags/${tag.id}?story_map_id=${storyMap2.id}`)
+        .expect(404);
+
+      // Should get 404 because tag doesn't exist in workspace 2's context
+      expect(response.body.message).toMatch(/not found/i);
+
+      // Verify tag still exists in workspace 1
+      await authenticatedRequest(app, authToken)
+        .get(`/api/tags/${tag.id}`)
+        .expect(200);
     });
   });
 });
