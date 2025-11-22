@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "node16",
+    "module": "commonjs",
     "lib": ["ES2022"],
     "declaration": true,
     "declarationMap": true,
@@ -26,7 +26,7 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node16"
+    "moduleResolution": "node"
   },
   "exclude": ["node_modules", "dist", "build"]
 }
