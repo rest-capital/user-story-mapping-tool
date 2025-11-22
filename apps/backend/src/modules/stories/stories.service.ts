@@ -413,36 +413,64 @@ export class StoriesService extends BaseService {
 
     return this.executeOperation(
       async () => {
-        // Verify story exists
+        // Verify story exists and get current workspace context
         const story = await this.prisma.story.findUnique({
           where: { id },
+          include: {
+            step: {
+              include: {
+                journey: true,
+              },
+            },
+            release: true,
+          },
         });
 
         if (!story) {
           throw new StoryError('Story not found');
         }
 
+        // Get current story map ID for workspace validation
+        const currentStoryMapId = story.step.journey.storyMapId;
+
         // Determine new cell coordinates
         const newStepId = moveDto.step_id || story.stepId;
         const newReleaseId = moveDto.release_id || story.releaseId;
 
-        // Validate new step exists (if changing)
+        // Validate new step exists and belongs to same story map (if changing)
         if (moveDto.step_id) {
           const step = await this.prisma.step.findUnique({
             where: { id: moveDto.step_id },
+            include: {
+              journey: true,
+            },
           });
           if (!step) {
             throw new StoryError('Target step not found');
           }
+
+          // CRITICAL: Validate workspace isolation
+          if (step.journey.storyMapId !== currentStoryMapId) {
+            throw new StoryError(
+              'Cannot move story to step from different story map',
+            );
+          }
         }
 
-        // Validate new release exists (if changing)
+        // Validate new release exists and belongs to same story map (if changing)
         if (moveDto.release_id) {
           const release = await this.prisma.release.findUnique({
             where: { id: moveDto.release_id },
           });
           if (!release) {
             throw new StoryError('Target release not found');
+          }
+
+          // CRITICAL: Validate workspace isolation
+          if (release.storyMapId !== currentStoryMapId) {
+            throw new StoryError(
+              'Cannot move story to release from different story map',
+            );
           }
         }
 
@@ -599,7 +627,6 @@ export class StoriesService extends BaseService {
         return storyTags.map((st) => ({
           id: st.tag.id,
           name: st.tag.name,
-          color: st.tag.color,
           created_at: st.tag.createdAt,
         }));
       },

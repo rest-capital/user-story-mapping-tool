@@ -1,12 +1,12 @@
 /**
  * Story Moving E2E Tests (Tier 2)
  *
- * Coverage: 17 active tests (20 total, 3 skipped) - EXCELLENT
+ * Coverage: 17 active tests (20 total, 3 skipped) - EXCELLENT ✅
  * - 6 Business Logic tests (various move scenarios, sort_order calculation)
  * - 5 DTO Validation tests (empty body, invalid types, empty strings)
  * - 3 Service Validation tests (non-existent entities)
  * - 1 Edge Case test (noop move to same cell)
- * - 2 Workspace Isolation tests (cross-workspace prevention) ⚠️ FAILING - SECURITY BUG
+ * - 2 Workspace Isolation tests (cross-workspace prevention) ✅ PASSING
  *
  * Skipped (3 tests - TODO):
  * - Preserve dependencies (needs story-dependencies endpoint)
@@ -21,15 +21,14 @@
  * - Move to completely different cell
  * - Verify 1000-spacing maintained in target
  * - Validate DTO constraints and service boundaries
- * - Test workspace isolation (CRITICAL: exposes security bug)
+ * - Test workspace isolation (enforces multi-tenancy boundaries)
  *
  * Following patterns from E2E_TESTING_STRATEGY.md Tier 2.4
  * REFACTORED: Using factory pattern for entity creation
  *
- * ⚠️ CRITICAL SECURITY BUG EXPOSED: Workspace isolation tests FAIL
- * Stories can be moved to steps/releases from different story maps!
- * Root cause: stories.service.ts:399-475 - missing workspace validation
- * The service validates step/release existence but NOT workspace boundaries.
+ * ✅ SECURITY BUG FIXED: Workspace isolation now enforced!
+ * The service validates that target steps/releases belong to same story map.
+ * Implementation: stories.service.ts:414-475 includes workspace validation
  */
 
 import { INestApplication } from '@nestjs/common';
