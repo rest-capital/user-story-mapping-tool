@@ -265,6 +265,7 @@ export class CollaborationGateway
         data.id,
         data.toStepId,
         data.toReleaseId,
+        data.mapId,
         socket.user.id,
       );
 
@@ -310,6 +311,7 @@ export class CollaborationGateway
 
       const result = await this.collaborationService.deleteStory(
         data.id,
+        data.mapId,
         socket.user.id,
       );
 
@@ -364,6 +366,7 @@ export class CollaborationGateway
 
       const comment = await this.collaborationService.createComment(
         data.storyId,
+        data.mapId,
         data.content,
         socket.user.id,
         userName,
@@ -412,6 +415,7 @@ export class CollaborationGateway
 
       const result = await this.collaborationService.deleteComment(
         data.id,
+        data.mapId,
         socket.user.id,
       );
 

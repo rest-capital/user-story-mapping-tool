@@ -82,9 +82,46 @@ export class CollaborationService extends BaseService {
     this.validateRequired(data.title, 'title', 'Story');
     this.validateRequired(data.step_id, 'step_id', 'Story');
     this.validateRequired(data.release_id, 'release_id', 'Story');
+    this.validateRequired(data.mapId, 'mapId', 'Story');
 
     return this.executeInTransaction(
       async (tx) => {
+        // SECURITY: Validate that step belongs to the specified map
+        const step = await tx.step.findUnique({
+          where: { id: data.step_id },
+          include: {
+            journey: {
+              select: { storyMapId: true },
+            },
+          },
+        });
+
+        if (!step) {
+          throw new CollaborationError('Step not found');
+        }
+
+        if (step.journey.storyMapId !== data.mapId) {
+          throw new CollaborationError(
+            'Step does not belong to the specified map',
+          );
+        }
+
+        // SECURITY: Validate that release belongs to the specified map
+        const release = await tx.release.findUnique({
+          where: { id: data.release_id },
+          select: { storyMapId: true },
+        });
+
+        if (!release) {
+          throw new CollaborationError('Release not found');
+        }
+
+        if (release.storyMapId !== data.mapId) {
+          throw new CollaborationError(
+            'Release does not belong to the specified map',
+          );
+        }
+
         // Calculate sort order in transaction to avoid race conditions
         const existingStories = await tx.story.count({
           where: {
@@ -122,7 +159,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'createStoryViaWebSocket',
-      { title: data.title, userId },
+      { title: data.title, userId, mapId: data.mapId },
     );
   }
 
@@ -135,16 +172,32 @@ export class CollaborationService extends BaseService {
     userId: string,
   ): Promise<StoryUpdatedResponse> {
     this.validateRequired(storyId, 'storyId');
+    this.validateRequired(data.mapId, 'mapId', 'UpdateStory');
 
     return this.executeOperation(
       async () => {
-        // Check story exists first
+        // SECURITY: Check story exists and belongs to the specified map
         const existing = await this.prisma.story.findUnique({
           where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!existing) {
           throw new CollaborationError('Story not found');
+        }
+
+        if (existing.step.journey.storyMapId !== data.mapId) {
+          throw new CollaborationError(
+            'Story does not belong to the specified map',
+          );
         }
 
         const updateData: any = { updatedBy: userId };
@@ -171,7 +224,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'updateStoryViaWebSocket',
-      { storyId, updates: Object.keys(data) },
+      { storyId, updates: Object.keys(data), mapId: data.mapId },
     );
   }
 
@@ -182,21 +235,74 @@ export class CollaborationService extends BaseService {
     storyId: string,
     toStepId: string,
     toReleaseId: string,
+    mapId: string,
     userId: string,
   ): Promise<StoryMovedResponse> {
     this.validateRequired(storyId, 'storyId');
     this.validateRequired(toStepId, 'toStepId');
     this.validateRequired(toReleaseId, 'toReleaseId');
+    this.validateRequired(mapId, 'mapId');
 
     return this.executeInTransaction(
       async (tx) => {
-        // Verify story exists
+        // SECURITY: Verify story exists and belongs to the specified map
         const existing = await tx.story.findUnique({
           where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
         });
 
         if (!existing) {
           throw new CollaborationError('Story not found');
+        }
+
+        if (existing.step.journey.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Story does not belong to the specified map',
+          );
+        }
+
+        // SECURITY: Validate destination step belongs to the specified map
+        const toStep = await tx.step.findUnique({
+          where: { id: toStepId },
+          include: {
+            journey: {
+              select: { storyMapId: true },
+            },
+          },
+        });
+
+        if (!toStep) {
+          throw new CollaborationError('Destination step not found');
+        }
+
+        if (toStep.journey.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Destination step does not belong to the specified map',
+          );
+        }
+
+        // SECURITY: Validate destination release belongs to the specified map
+        const toRelease = await tx.release.findUnique({
+          where: { id: toReleaseId },
+          select: { storyMapId: true },
+        });
+
+        if (!toRelease) {
+          throw new CollaborationError('Destination release not found');
+        }
+
+        if (toRelease.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Destination release does not belong to the specified map',
+          );
         }
 
         // Calculate new sort order in transaction
@@ -229,7 +335,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'moveStoryViaWebSocket',
-      { storyId, toStepId, toReleaseId },
+      { storyId, toStepId, toReleaseId, mapId },
     );
   }
 
@@ -238,12 +344,38 @@ export class CollaborationService extends BaseService {
    */
   async deleteStory(
     storyId: string,
+    mapId: string,
     userId: string,
   ): Promise<StoryDeletedResponse> {
     this.validateRequired(storyId, 'storyId');
+    this.validateRequired(mapId, 'mapId');
 
     return this.executeInTransaction(
       async (tx) => {
+        // SECURITY: Verify story exists and belongs to the specified map
+        const existing = await tx.story.findUnique({
+          where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!existing) {
+          throw new CollaborationError('Story not found');
+        }
+
+        if (existing.step.journey.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Story does not belong to the specified map',
+          );
+        }
+
         // Delete in correct order (same as REST API)
         await tx.storyLink.deleteMany({
           where: {
@@ -265,7 +397,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'deleteStoryViaWebSocket',
-      { storyId },
+      { storyId, mapId },
     );
   }
 
@@ -274,17 +406,43 @@ export class CollaborationService extends BaseService {
    */
   async createComment(
     storyId: string,
+    mapId: string,
     content: string,
     userId: string,
     userName: string,
     avatarUrl: string | null,
   ): Promise<CommentCreatedResponse> {
     this.validateRequired(storyId, 'storyId');
+    this.validateRequired(mapId, 'mapId');
     this.validateRequired(content, 'content');
     this.validateRequired(userId, 'userId');
 
     return this.executeOperation(
       async () => {
+        // SECURITY: Validate that story belongs to the specified map
+        const story = await this.prisma.story.findUnique({
+          where: { id: storyId },
+          include: {
+            step: {
+              include: {
+                journey: {
+                  select: { storyMapId: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!story) {
+          throw new CollaborationError('Story not found');
+        }
+
+        if (story.step.journey.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Story does not belong to the specified map',
+          );
+        }
+
         const comment = await this.prisma.comment.create({
           data: {
             storyId,
@@ -306,7 +464,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'createCommentViaWebSocket',
-      { storyId, userId },
+      { storyId, mapId, userId },
     );
   }
 
@@ -315,15 +473,30 @@ export class CollaborationService extends BaseService {
    */
   async deleteComment(
     commentId: string,
+    mapId: string,
     userId: string,
   ): Promise<CommentDeletedResponse> {
     this.validateRequired(commentId, 'commentId');
+    this.validateRequired(mapId, 'mapId');
 
     return this.executeOperation(
       async () => {
-        // Verify comment exists and user is author
+        // SECURITY: Verify comment exists, user is author, and story belongs to map
         const comment = await this.prisma.comment.findUnique({
           where: { id: commentId },
+          include: {
+            story: {
+              include: {
+                step: {
+                  include: {
+                    journey: {
+                      select: { storyMapId: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
         });
 
         if (!comment) {
@@ -332,6 +505,12 @@ export class CollaborationService extends BaseService {
 
         if (comment.authorId !== userId) {
           throw new CollaborationError('Only comment author can delete');
+        }
+
+        if (comment.story && comment.story.step.journey.storyMapId !== mapId) {
+          throw new CollaborationError(
+            'Comment does not belong to the specified map',
+          );
         }
 
         await this.prisma.comment.delete({
@@ -344,7 +523,7 @@ export class CollaborationService extends BaseService {
         };
       },
       'deleteCommentViaWebSocket',
-      { commentId, userId },
+      { commentId, mapId, userId },
     );
   }
 }
