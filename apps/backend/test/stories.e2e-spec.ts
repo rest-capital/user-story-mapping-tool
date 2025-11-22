@@ -23,14 +23,14 @@ import request from 'supertest';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import { storyFixtures } from './fixtures/story.fixture';
-import { createJourney, createStep, createRelease } from './factories';
+import { createStoryMap, createJourney, createStep, createRelease } from './factories';
 
 describe('Stories (E2E) - Tier 1', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   // Parent entities required for stories
-  let journeyId: string;
   let stepId: string;
   let releaseId: string;
 
@@ -42,14 +42,14 @@ describe('Stories (E2E) - Tier 1', () => {
     // Auth token is created fresh for each test
     // Database cleanup happens in global setup.ts
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
 
     // Create parent entities required for stories using factories
     // Stories require: step_id (Journey > Step) + release_id
-    const journey = await createJourney(app, authToken);
+    const journey = await createJourney(app, authToken, storyMap.id);
     const step = await createStep(app, authToken, journey.id, 'Test Step');
-    const release = await createRelease(app, authToken);
+    const release = await createRelease(app, authToken, storyMap.id);
 
-    journeyId = journey.id;
     stepId = step.id;
     releaseId = release.id;
   });
@@ -130,6 +130,159 @@ describe('Stories (E2E) - Tier 1', () => {
       expect(response.body).toHaveProperty('message');
       expect(response.body.message).toMatch(/release|not found|related/i);
     });
+
+    it('should auto-calculate sort_order correctly (1000-based spacing)', async () => {
+      // Stories use 1000-based spacing: 1000, 2000, 3000...
+      // This allows inserting stories between existing ones later
+
+      // Create 3 stories in the same cell
+      const story1 = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.minimal(stepId, releaseId))
+        .expect(201);
+
+      const story2 = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.minimal(stepId, releaseId))
+        .expect(201);
+
+      const story3 = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.minimal(stepId, releaseId))
+        .expect(201);
+
+      // Verify 1000-based spacing
+      expect(story1.body.sort_order).toBe(1000);
+      expect(story2.body.sort_order).toBe(2000);
+      expect(story3.body.sort_order).toBe(3000);
+    });
+
+    it('should allow duplicate titles (no unique constraint)', async () => {
+      const duplicateTitle = 'Duplicate Story Title';
+
+      // Create first story with title
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.withTitle(stepId, releaseId, duplicateTitle))
+        .expect(201);
+
+      // Create second story with same title - should succeed
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.withTitle(stepId, releaseId, duplicateTitle))
+        .expect(201);
+    });
+
+    it('should create story with optional fields (size, description)', async () => {
+      const storyData = {
+        title: 'Story with Optional Fields',
+        description: 'Detailed description',
+        step_id: stepId,
+        release_id: releaseId,
+        size: 5,
+        status: 'READY',
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyData)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        title: storyData.title,
+        description: storyData.description,
+        size: 5,
+        status: 'READY',
+      });
+    });
+
+    it('should reject invalid status enum value', async () => {
+      const invalidData = {
+        title: 'Test Story',
+        step_id: stepId,
+        release_id: releaseId,
+        status: 'INVALID_STATUS',
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(invalidData)
+        .expect(400);
+
+      expect(response.body).toHaveProperty('message');
+      // Message is an array of validation errors
+      expect(Array.isArray(response.body.message)).toBe(true);
+      expect(response.body.message[0]).toMatch(/status/i);
+    });
+
+    it('should reject invalid size values (zero, negative, non-integer)', async () => {
+      // Test size = 0 (violates @Min(1))
+      const zeroSize = {
+        title: 'Test Story',
+        step_id: stepId,
+        release_id: releaseId,
+        size: 0,
+      };
+
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(zeroSize)
+        .expect(400);
+
+      // Test negative size
+      const negativeSize = {
+        title: 'Test Story',
+        step_id: stepId,
+        release_id: releaseId,
+        size: -5,
+      };
+
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(negativeSize)
+        .expect(400);
+
+      // Test non-integer
+      const floatSize = {
+        title: 'Test Story',
+        step_id: stepId,
+        release_id: releaseId,
+        size: 3.5,
+      };
+
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(floatSize)
+        .expect(400);
+    });
+
+    it('should create story with all status values (DONE, BLOCKED)', async () => {
+      // Test DONE status
+      const doneStory = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send({
+          title: 'Done Story',
+          step_id: stepId,
+          release_id: releaseId,
+          status: 'DONE',
+        })
+        .expect(201);
+
+      expect(doneStory.body.status).toBe('DONE');
+
+      // Test BLOCKED status
+      const blockedStory = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send({
+          title: 'Blocked Story',
+          step_id: stepId,
+          release_id: releaseId,
+          status: 'BLOCKED',
+        })
+        .expect(201);
+
+      expect(blockedStory.body.status).toBe('BLOCKED');
+    });
   });
 
   describe('GET /api/stories', () => {
@@ -182,6 +335,53 @@ describe('Stories (E2E) - Tier 1', () => {
 
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body).toHaveLength(0);
+    });
+
+    it('should isolate stories by cell (different step_id or release_id)', async () => {
+      // Create a second step and release for testing isolation
+      const journey = await createJourney(app, authToken, storyMap.id);
+      const step2 = await createStep(app, authToken, journey.id, 'Second Step');
+      const release2 = await createRelease(app, authToken, storyMap.id);
+
+      // Create stories in different cells
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.withTitle(stepId, releaseId, 'Cell 1-1'))
+        .expect(201);
+
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.withTitle(step2.id, releaseId, 'Cell 2-1'))
+        .expect(201);
+
+      await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyFixtures.withTitle(stepId, release2.id, 'Cell 1-2'))
+        .expect(201);
+
+      // Query cell 1-1 (stepId, releaseId)
+      const cell11Response = await authenticatedRequest(app, authToken)
+        .get(`/api/stories?step_id=${stepId}&release_id=${releaseId}`)
+        .expect(200);
+
+      expect(cell11Response.body).toHaveLength(1);
+      expect(cell11Response.body[0].title).toBe('Cell 1-1');
+
+      // Query cell 2-1 (step2.id, releaseId)
+      const cell21Response = await authenticatedRequest(app, authToken)
+        .get(`/api/stories?step_id=${step2.id}&release_id=${releaseId}`)
+        .expect(200);
+
+      expect(cell21Response.body).toHaveLength(1);
+      expect(cell21Response.body[0].title).toBe('Cell 2-1');
+
+      // Query cell 1-2 (stepId, release2.id)
+      const cell12Response = await authenticatedRequest(app, authToken)
+        .get(`/api/stories?step_id=${stepId}&release_id=${release2.id}`)
+        .expect(200);
+
+      expect(cell12Response.body).toHaveLength(1);
+      expect(cell12Response.body[0].title).toBe('Cell 1-2');
     });
   });
 
@@ -254,6 +454,74 @@ describe('Stories (E2E) - Tier 1', () => {
         .patch(`/api/stories/${fakeId}`)
         .send({ title: 'Updated' })
         .expect(404);
+    });
+
+    it('should update story status and size', async () => {
+      const storyData = storyFixtures.minimal(stepId, releaseId);
+
+      const createResponse = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyData)
+        .expect(201);
+
+      const story = createResponse.body;
+
+      // Update status and size
+      const updateData = {
+        status: 'IN_PROGRESS',
+        size: 8,
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .patch(`/api/stories/${story.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        id: story.id,
+        status: 'IN_PROGRESS',
+        size: 8,
+      });
+    });
+
+    it('should reject update to invalid step_id (move validation)', async () => {
+      const storyData = storyFixtures.minimal(stepId, releaseId);
+
+      const createResponse = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyData)
+        .expect(201);
+
+      const story = createResponse.body;
+
+      // Try to move to non-existent step
+      const response = await authenticatedRequest(app, authToken)
+        .patch(`/api/stories/${story.id}`)
+        .send({ step_id: 'non-existent-step-id' })
+        .expect(404);
+
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toMatch(/step|not found/i);
+    });
+
+    it('should reject update to invalid release_id (move validation)', async () => {
+      const storyData = storyFixtures.minimal(stepId, releaseId);
+
+      const createResponse = await authenticatedRequest(app, authToken)
+        .post('/api/stories')
+        .send(storyData)
+        .expect(201);
+
+      const story = createResponse.body;
+
+      // Try to move to non-existent release
+      const response = await authenticatedRequest(app, authToken)
+        .patch(`/api/stories/${story.id}`)
+        .send({ release_id: 'non-existent-release-id' })
+        .expect(404);
+
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toMatch(/release|not found/i);
     });
   });
 

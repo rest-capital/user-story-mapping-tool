@@ -268,9 +268,18 @@ describe('Authentication (E2E)', () => {
 
       const token = signupResponse.body.access_token;
 
-      // Access protected route
+      // First create a story map (required for workspace scoping)
+      const storyMapResponse = await request(app.getHttpServer())
+        .post('/api/story-maps')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Test Story Map' })
+        .expect(201);
+
+      const storyMapId = storyMapResponse.body.id;
+
+      // Access protected route with story_map_id
       const response = await request(app.getHttpServer())
-        .get('/api/journeys')
+        .get(`/api/journeys?story_map_id=${storyMapId}`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 

@@ -26,18 +26,22 @@ export class ReleasesService extends BaseService {
 
   /**
    * Get all releases
+   * Workspace-scoped: filtered by story_map_id
    */
-  async findAll(): Promise<ReleaseResponseDto[]> {
+  async findAll(storyMapId: string): Promise<ReleaseResponseDto[]> {
+    this.validateRequired(storyMapId, 'storyMapId');
+
     return this.executeOperation(
       async () => {
         const releases = await this.prisma.release.findMany({
+          where: { storyMapId },
           orderBy: { sortOrder: 'asc' },
         });
 
         return releases.map((release) => this.toResponseDto(release));
       },
       'findAllReleases',
-      {},
+      { storyMapId },
     );
   }
 
@@ -67,27 +71,48 @@ export class ReleasesService extends BaseService {
   /**
    * Create a new release
    * Calculates next sort order automatically
+   * Workspace-scoped: validates story_map_id and user access
    */
   async create(
     createDto: CreateReleaseDto,
     userId: string,
   ): Promise<ReleaseResponseDto> {
     this.validateRequired(createDto.name, 'name', 'Release');
+    this.validateRequired(createDto.story_map_id, 'story_map_id', 'Release');
     this.validateRequired(userId, 'userId');
 
     return this.executeOperation(
       async () => {
-        // Calculate next sort order (0-based for normal releases)
-        let sortOrder = createDto.sort_order ?? 0;
+        // Verify story map exists and user has access
+        const storyMap = await this.prisma.storyMap.findFirst({
+          where: {
+            id: createDto.story_map_id,
+            createdBy: userId,
+          },
+        });
 
-        if (sortOrder === undefined || sortOrder === null) {
-          const existingReleases = await this.prisma.release.count();
+        if (!storyMap) {
+          throw new ReleaseError('Story map not found or access denied');
+        }
+
+        // Calculate next sort order within this story map (0-based for normal releases)
+        let sortOrder: number;
+
+        if (createDto.sort_order !== undefined && createDto.sort_order !== null) {
+          // Use provided sort_order
+          sortOrder = createDto.sort_order;
+        } else {
+          // Auto-calculate based on existing releases count
+          const existingReleases = await this.prisma.release.count({
+            where: { storyMapId: createDto.story_map_id },
+          });
           sortOrder = existingReleases; // 0-based
         }
 
         // Create release - map snake_case API DTO to camelCase Prisma
         const release = await this.prisma.release.create({
           data: {
+            storyMapId: createDto.story_map_id,
             name: createDto.name,
             description: createDto.description || '',
             startDate: createDto.start_date
@@ -189,9 +214,12 @@ export class ReleasesService extends BaseService {
           throw new ReleaseError('Cannot delete the Unassigned release');
         }
 
-        // CRITICAL: Find the Unassigned release to move stories to
+        // CRITICAL: Find the Unassigned release to move stories to (scoped to same story map)
         const unassignedRelease = await tx.release.findFirst({
-          where: { isUnassigned: true },
+          where: {
+            isUnassigned: true,
+            storyMapId: release.storyMapId,
+          },
         });
 
         if (!unassignedRelease) {
@@ -255,8 +283,9 @@ export class ReleasesService extends BaseService {
           throw new ReleaseError('Cannot reorder the Unassigned release');
         }
 
-        // Fetch all releases sorted by current sort_order
+        // Fetch all releases in the same story map sorted by current sort_order
         const allReleases = await tx.release.findMany({
+          where: { storyMapId: targetRelease.storyMapId },
           orderBy: { sortOrder: 'asc' },
         });
 
@@ -311,6 +340,7 @@ export class ReleasesService extends BaseService {
   private toResponseDto(release: any): ReleaseResponseDto {
     return {
       id: release.id,
+      story_map_id: release.storyMapId,
       name: release.name,
       description: release.description,
       start_date: release.startDate,

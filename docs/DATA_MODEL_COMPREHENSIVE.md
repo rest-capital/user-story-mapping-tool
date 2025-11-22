@@ -1,7 +1,7 @@
 # User Story Mapping Tool - Comprehensive Data Model Documentation
 
-**Version:** 2.0 (Corrected)  
-**Date:** 2025-11-18  
+**Version:** 3.0 (Updated)  
+**Date:** 2025-11-22  
 **Purpose:** Backend API and Database Schema Design  
 **Auth:** Supabase JWT-based authentication
 
@@ -22,25 +22,60 @@
 
 ## 1. Data Entities Overview
 
-The application has **6 core entities** and **4 supporting entities**:
+The application has **8 core entities** and **3 supporting entities**:
 
 ### Core Entities (Persisted)
+0. **StoryMap** - Workspace container for all story mapping data (multi-workspace support)
 1. **Journey** - Top-level user workflow grouping (e.g., "Messaging", "Settings")
 2. **Step** - Activity within a journey (e.g., "Send messages", "Receive messages")
 3. **Story** - User story/task (positioned at Step × Release intersection)
 4. **Release** - Time-based release/sprint (e.g., "MVP", "Release 2")
-5. **Tag** - Reusable label for categorizing stories
+5. **Tag** - Reusable label for categorizing stories (text-only, NO colors)
 6. **Persona** - User persona/role (e.g., "Admin", "End User")
+7. **Label** - Visual label/badge for categorizing stories (with colors) - Shared across story map
 
 ### Supporting Entities (Embedded/Related)
-7. **Label** - Visual label on a story (embedded in Story, not standalone)
 8. **StoryLink** - Dependency between two stories (embedded in Story.dependencies)
-9. **Comment** - Comment on a story or release (embedded in Story/Release)
+9. **Comment** - Comment on any entity (collaborative commenting system)
 10. **Attachment** - File attachment on a story (embedded in Story)
 
 ---
 
 ## 2. Entity Schemas
+
+### 2.0 StoryMap (Workspace)
+
+**Purpose:** Top-level workspace that contains all user story mapping data
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `id` | string | ✅ | auto-generated | Unique identifier |
+| `name` | string | ✅ | - | Story map name (e.g., "Product Roadmap 2025") |
+| `description` | string | ❌ | "" | Optional description |
+| `created_at` | Date | ✅ | now() | Timestamp of creation |
+| `created_by` | string | ✅ | from JWT | User ID who created this story map |
+| `modified_at` | Date | ✅ | now() | Timestamp of last modification |
+| `modified_by` | string | ✅ | from JWT | User ID who last modified |
+
+**Purpose:**
+- Multi-workspace support (users can have multiple story maps)
+- Isolation boundary for all entities
+- Team collaboration workspace
+
+**Scoped Entities:**
+- Journey (via `story_map_id`)
+- Release (via `story_map_id`)
+- Label (via `story_map_id`)
+- Tag (via `story_map_id`)
+- Persona (via `story_map_id`)
+
+**Note:** Steps and Stories are indirectly scoped through their parent entities.
+
+**Constraints:**
+- Users can only access story maps they created (future: add sharing)
+- Deleting a story map cascades to all child entities
+
+---
 
 ### 2.1 Journey
 
@@ -49,6 +84,7 @@ The application has **6 core entities** and **4 supporting entities**:
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `id` | string | ✅ | auto-generated | Unique identifier |
+| `story_map_id` | string | ✅ | - | Foreign key to StoryMap (workspace scoping) |
 | `name` | string | ✅ | - | Journey name (e.g., "1. Messaging") |
 | `description` | string | ❌ | "" | Optional description |
 | `sort_order` | number | ✅ | auto-increment | Position in left-to-right order |
@@ -57,9 +93,11 @@ The application has **6 core entities** and **4 supporting entities**:
 | `updated_at` | Date | ✅ | now() | Timestamp of last update |
 
 **Constraints:**
-- `name` must be unique
+- `story_map_id` must reference valid StoryMap
+- `name` must be unique within a story map
 - `sort_order` determines horizontal position (left to right)
 - Deleting a journey cascades to steps and stories
+- Deleting a story map cascades to all journeys
 
 ---
 
@@ -135,6 +173,7 @@ The application has **6 core entities** and **4 supporting entities**:
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `id` | string | ✅ | auto-generated | Unique identifier |
+| `story_map_id` | string | ✅ | - | Foreign key to StoryMap (workspace scoping) |
 | `name` | string | ✅ | - | Release name (e.g., "MVP (MVP)") |
 | `description` | string | ❌ | "" | Optional description |
 | `start_date` | Date | ❌ | null | Release start date |
@@ -148,27 +187,36 @@ The application has **6 core entities** and **4 supporting entities**:
 | `updated_at` | Date | ✅ | now() | Timestamp of last update |
 
 **Special Rules:**
-- One release must have `is_unassigned: true` (cannot be deleted)
+- One release per story map must have `is_unassigned: true` (cannot be deleted)
 - Unassigned release always appears at the bottom (highest sort_order)
 - Deleting a release moves its stories to Unassigned
 - `sort_order` determines vertical position (top to bottom)
+
+**Constraints:**
+- `story_map_id` must reference valid StoryMap
+- Only one release can have `is_unassigned: true` per story map
 
 ---
 
 ### 2.5 Tag
 
-**Purpose:** Reusable categorization label for stories
+**Purpose:** Reusable categorization label for stories (text-only, NO colors)
 
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `id` | string | ✅ | auto-generated | Unique identifier |
+| `story_map_id` | string | ✅ | - | Foreign key to StoryMap (workspace scoping) |
 | `name` | string | ✅ | - | Tag name (e.g., "Frontend", "Bug") |
-| `color` | string | ✅ | "#8B5CF6" | Hex color code for visual display |
 | `created_at` | Date | ✅ | now() | Timestamp of creation |
+| `created_by` | string | ✅ | from JWT | User ID who created this tag |
+| `modified_at` | Date | ✅ | now() | Timestamp of last modification |
+| `modified_by` | string | ✅ | from JWT | User ID who last modified this tag |
 
 **Constraints:**
-- `name` should be unique
+- `story_map_id` must reference valid StoryMap
+- `name` should be unique within a story map
 - Tags are attached to stories via many-to-many relationship
+- ⚠️ Tags do NOT have color (only Labels have colors)
 
 ---
 
@@ -179,27 +227,43 @@ The application has **6 core entities** and **4 supporting entities**:
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `id` | string | ✅ | auto-generated | Unique identifier |
+| `story_map_id` | string | ✅ | - | Foreign key to StoryMap (workspace scoping) |
 | `name` | string | ✅ | - | Persona name (e.g., "Admin User") |
 | `description` | string | ❌ | "" | Optional description |
 | `avatar_url` | string | ❌ | null | Optional avatar image URL |
 | `created_at` | Date | ✅ | now() | Timestamp of creation |
+| `created_by` | string | ✅ | from JWT | User ID who created this persona |
+| `modified_at` | Date | ✅ | now() | Timestamp of last modification |
+| `modified_by` | string | ✅ | from JWT | User ID who last modified this persona |
 
 **Constraints:**
+- `story_map_id` must reference valid StoryMap
 - Personas are attached to stories via many-to-many relationship
 
 ---
 
-### 2.7 Label (Embedded in Story)
+### 2.7 Label
 
-**Purpose:** Visual label/badge on a story card
+**Purpose:** Visual label/badge for categorizing stories (with colors) - Shared across story map
 
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
-| `id` | string | ✅ | - | Label identifier |
+| `id` | string | ✅ | auto-generated | Unique identifier |
+| `story_map_id` | string | ✅ | - | Foreign key to StoryMap (workspace scoping) |
 | `name` | string | ✅ | - | Label text (e.g., "Feature", "Bug") |
 | `color` | string | ✅ | "#3B82F6" | Hex color code for background |
+| `created_at` | Date | ✅ | now() | Timestamp of creation |
+| `created_by` | string | ✅ | from JWT | User ID who created this label |
+| `modified_at` | Date | ✅ | now() | Timestamp of last modification |
+| `modified_by` | string | ✅ | from JWT | User ID who last modified this label |
 
-**Storage:** Embedded directly in Story object (not a separate table)
+**Storage:** Separate table/entity (shared across all stories in story map)
+
+**Constraints:**
+- `story_map_id` must reference valid StoryMap
+- `name` should be unique within a story map
+- ⚠️ Labels HAVE color (Tags do NOT have color)
+- Stories reference labels by ID, but store denormalized label data for performance
 
 ---
 
@@ -224,18 +288,19 @@ The application has **6 core entities** and **4 supporting entities**:
 
 **Storage:** Embedded in Story.dependencies array (could be separate table)
 
-**Important:** The TypeScript enum `StoryLinkType` defines `DEPENDENCY`, `BLOCKER`, etc., but the actual runtime code uses string literals like `"linked to"`. This is existing tech debt.
+**Important:** ✅ FIXED (Nov 22, 2025) - The `link_type` field now correctly uses `string` type to support user-defined relationship types like `"linked to"`, `"blocks"`, `"is blocked by"`, etc. Previous enum-based approach has been removed.
 
 ---
 
-### 2.9 Comment (Embedded in Story/Release)
+### 2.9 Comment (Polymorphic - Works for Journey/Step/Story/Release)
 
-**Purpose:** Comment on a story or release (collaborative commenting system)
+**Purpose:** Comment on any entity (collaborative commenting system)
 
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `id` | string | ✅ | auto-generated | Unique identifier |
-| `story_id` | string | ❌ | null | Foreign key to Story (if commenting on story) |
+| `entity_type` | string | ✅ | - | Type of parent entity: 'journey', 'step', 'story', or 'release' |
+| `entity_id` | string | ✅ | - | ID of the parent entity (polymorphic reference) |
 | `author_id` | string | ✅ | from JWT | User ID of commenter (extracted from auth token) |
 | `author` | string | ✅ | from JWT | Display name of commenter (from user profile) |
 | `avatar_url` | string | ❌ | from JWT | Avatar URL of commenter (from user profile) |
@@ -249,7 +314,12 @@ The application has **6 core entities** and **4 supporting entities**:
 - Backend returns full comment object with `is_current_user: boolean` flag
 - Frontend shows edit/delete buttons only if `is_current_user === true`
 
-**Storage:** Embedded in Story.comments or Release.comments array
+**Polymorphic Pattern:** ✅ FIXED (Nov 22, 2025)
+- Uses `entity_type` + `entity_id` instead of hardcoded `story_id`
+- Supports comments on Journey, Step, Story, and Release entities
+- Enables querying: "Get all comments for this journey" or "Get all comments by this user"
+
+**Storage:** Can be embedded in entity or stored in separate table with polymorphic keys
 
 ---
 
@@ -355,12 +425,74 @@ StoryLink (Many to 1) ──> Story (source_story_id)
 
 ## 4. CRUD Operations
 
+### 4.0 StoryMap Operations
+
+#### Create StoryMap
+**Frontend Sends:**
+```typescript
+{
+  name: string,          // Required
+  description?: string   // Optional
+}
+```
+**Backend Returns:**
+```typescript
+StoryMap (complete object with id, created_by, modified_by, timestamps)
+```
+**Backend Processing:**
+- Auto-generates `id`
+- Extracts `created_by` and `modified_by` from JWT token (`jwt.sub`)
+- Sets `created_at` and `modified_at` to now()
+- ⚠️ **CRITICAL:** Automatically creates default "Unassigned" release for this story map:
+  ```sql
+  INSERT INTO releases (story_map_id, name, is_unassigned, sort_order)
+  VALUES (new_storymap_id, 'Unassigned', true, 999999);
+  ```
+
+#### Read StoryMaps
+**Patterns:**
+1. **Get All:** `GET /api/storymaps` → Returns all story maps for current user
+2. **Get One:** `GET /api/storymaps/:id` → Returns single story map
+
+#### Update StoryMap
+**Frontend Sends:**
+```typescript
+{
+  name?: string,
+  description?: string
+}
+```
+**Type:** Partial update (PATCH semantics)
+**Backend Processing:**
+- Updates `modified_at` to now()
+- Extracts `modified_by` from JWT token
+
+#### Delete StoryMap
+**Type:** Hard delete (cascades to ALL child entities)
+**Side Effects:**
+- Deletes all Journeys (which cascades to Steps and Stories)
+- Deletes all Releases (including Unassigned)
+- Deletes all Tags
+- Deletes all Labels
+- Deletes all Personas
+- Removes all junction table entries
+- Deletes all comments for all entities in this story map
+**Backend Returns:**
+```typescript
+{
+  success: true
+}
+```
+
+---
+
 ### 4.1 Journey Operations
 
 #### Create Journey
 **Frontend Sends:**
 ```typescript
 {
+  story_map_id: string,  // Required
   name: string,          // Required
   color?: string,        // Optional, default: "#8B5CF6"
   description?: string   // Optional
@@ -394,7 +526,7 @@ Journey (complete object with id, sort_order, timestamps)
 **Type:** Partial update (PATCH semantics)
 **Side Effects:**
 - Updates `updated_at`
-- Triggers grid recalculation (frontend)
+- Triggers grid recalculation
 
 #### Delete Journey
 **Type:** Hard delete (cascades to steps and stories)
@@ -582,7 +714,7 @@ Release (complete object)
 **Constraints:**
 - Cannot delete release with `is_unassigned: true`
 **Side Effects:**
-- ⚠️ **CRITICAL:** All stories MUST be moved to Unassigned release before deletion
+- ️ **CRITICAL:** All stories MUST be moved to Unassigned release before deletion
 - SQL: `UPDATE stories SET release_id = (unassigned_id) WHERE release_id = ?`
 - Then delete release: `DELETE FROM releases WHERE id = ?`
 - Release comments are deleted with the release
@@ -602,13 +734,33 @@ Release (complete object)
 **Frontend Sends:**
 ```typescript
 {
-  name: string,    // Required
-  color: string    // Required (hex code)
+  story_map_id: string,  // Required
+  name: string           // Required
 }
 ```
+**Backend Returns:**
+```typescript
+Tag (complete object with id, story_map_id, created_by, modified_by, timestamps)
+```
+**Backend Processing:**
+- Auto-generates `id`
+- Extracts `created_by` and `modified_by` from JWT token (`jwt.sub`)
+- Sets `created_at` and `modified_at` to now()
+- ⚠️ Tags do NOT have color field (only Labels have colors)
 
 #### Read Tags
 **Pattern:** `GET /tags` → All tags
+
+#### Update Tag
+**Frontend Sends:**
+```typescript
+{
+  name?: string  // Only field that can be updated
+}
+```
+**Backend Processing:**
+- Updates `modified_at` to now()
+- Extracts `modified_by` from JWT token
 
 #### Delete Tag
 **Type:** Soft delete (removes from stories)
@@ -623,14 +775,36 @@ Release (complete object)
 **Frontend Sends:**
 ```typescript
 {
-  name: string,
+  story_map_id: string,  // Required
+  name: string,          // Required
   description?: string,
   avatar_url?: string
 }
 ```
+**Backend Returns:**
+```typescript
+Persona (complete object with id, story_map_id, created_by, modified_by, timestamps)
+```
+**Backend Processing:**
+- Auto-generates `id`
+- Extracts `created_by` and `modified_by` from JWT token (`jwt.sub`)
+- Sets `created_at` and `modified_at` to now()
 
 #### Read Personas
 **Pattern:** `GET /personas` → All personas
+
+#### Update Persona
+**Frontend Sends:**
+```typescript
+{
+  name?: string,
+  description?: string,
+  avatar_url?: string
+}
+```
+**Backend Processing:**
+- Updates `modified_at` to now()
+- Extracts `modified_by` from JWT token
 
 #### Delete Persona
 **Type:** Soft delete (removes from stories)
@@ -639,7 +813,50 @@ Release (complete object)
 
 ---
 
-### 4.7 Dependency Operations
+### 4.7 Label Operations
+
+#### Create Label
+**Frontend Sends:**
+```typescript
+{
+  story_map_id: string,  // Required
+  name: string,          // Required
+  color: string          // Required (hex color code)
+}
+```
+**Backend Returns:**
+```typescript
+Label (complete object with id, story_map_id, created_by, modified_by, timestamps)
+```
+**Backend Processing:**
+- Auto-generates `id`
+- Extracts `created_by` and `modified_by` from JWT token (`jwt.sub`)
+- Sets `created_at` and `modified_at` to now()
+- ⚠️ Labels MUST have color field (Tags do NOT have color)
+
+#### Read Labels
+**Pattern:** `GET /labels` → All labels
+
+#### Update Label
+**Frontend Sends:**
+```typescript
+{
+  name?: string,
+  color?: string
+}
+```
+**Backend Processing:**
+- Updates `modified_at` to now()
+- Extracts `modified_by` from JWT token
+
+#### Delete Label
+**Type:** Soft delete (stories revert to default label)
+**Side Effects:**
+- Stories using this label revert to default label: `{ id: 'default', name: 'Story', color: '#3B82F6' }`
+
+---
+
+### 4.8 Dependency Operations
 
 #### Add Dependency
 **Frontend Sends:**
@@ -665,7 +882,7 @@ Release (complete object)
 
 ---
 
-### 4.8 Comment Operations
+### 4.9 Comment Operations
 
 #### Add Comment
 **Frontend Sends:**
@@ -1042,7 +1259,7 @@ isAtRisk = (
 
 **For ALL authenticated endpoints:**
 - Extract `user_id` from JWT `sub` claim
-- Auto-populate `created_by`, `updated_by`, `author_id` fields
+- Auto-populate `created_by`, `modified_by`, `author_id` fields
 - Never trust client-provided user IDs
 
 **For comment operations:**
@@ -1079,7 +1296,7 @@ const comments = story.comments.map(comment => ({
 **What Frontend Sends:**
 - ✅ JWT token in Authorization header
 - ✅ Content/data fields only
-- ❌ Never send `author_id`, `created_by`, `updated_by`
+- ❌ Never send `author_id`, `created_by`, `modified_by`
 
 **What Frontend Receives:**
 - Backend includes `is_current_user: boolean` flag on comments
@@ -1104,15 +1321,28 @@ const comments = story.comments.map(comment => ({
 ### 7.1 PostgreSQL Schema (Relational)
 
 ```sql
+-- StoryMap Table
+CREATE TABLE story_maps (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_by VARCHAR(255) NOT NULL,
+  modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  modified_by VARCHAR(255) NOT NULL
+);
+
 -- Journeys Table
 CREATE TABLE journeys (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(255) NOT NULL UNIQUE,
+  story_map_id UUID NOT NULL REFERENCES story_maps(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
   description TEXT,
   sort_order INTEGER NOT NULL,
   color VARCHAR(7) DEFAULT '#8B5CF6',
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(story_map_id, name)  -- Name unique per story map
 );
 
 -- Steps Table
@@ -1130,6 +1360,7 @@ CREATE TABLE steps (
 -- Releases Table
 CREATE TABLE releases (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  story_map_id UUID NOT NULL REFERENCES story_maps(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   description TEXT,
   start_date DATE,
@@ -1139,14 +1370,15 @@ CREATE TABLE releases (
   sort_order INTEGER NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  UNIQUE(is_unassigned) WHERE is_unassigned = TRUE  -- Only one unassigned
+  UNIQUE(story_map_id, is_unassigned)  -- ⚠️ Only one unassigned release per story map
+  CHECK (is_unassigned = TRUE OR is_unassigned = FALSE)  -- Must be boolean
 );
 
 -- Stories Table
 CREATE TABLE stories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   step_id UUID NOT NULL REFERENCES steps(id) ON DELETE CASCADE,
-  release_id UUID NOT NULL REFERENCES releases(id) ON DELETE SET DEFAULT,  -- Move to unassigned
+  release_id UUID NOT NULL REFERENCES releases(id) ON DELETE RESTRICT,  -- ⚠️ Prevent deletion if stories exist - Backend MUST move stories first
   title VARCHAR(500) NOT NULL,
   description TEXT,
   status VARCHAR(20) NOT NULL DEFAULT 'NOT_READY',
@@ -1158,26 +1390,44 @@ CREATE TABLE stories (
   -- Embedded label (denormalized)
   label_id VARCHAR(50),
   label_name VARCHAR(100),
-  label_color VARCHAR(7),
-  
-  INDEX(step_id, release_id)  -- Frequently queried together
+  label_color VARCHAR(7)
 );
 
 -- Tags Table
 CREATE TABLE tags (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(100) NOT NULL UNIQUE,
-  color VARCHAR(7) NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  story_map_id UUID NOT NULL REFERENCES story_maps(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_by VARCHAR(255) NOT NULL,
+  modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  modified_by VARCHAR(255) NOT NULL,
+  UNIQUE(story_map_id, name)  -- Name unique per story map
 );
 
 -- Personas Table
 CREATE TABLE personas (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  story_map_id UUID NOT NULL REFERENCES story_maps(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
   description TEXT,
   avatar_url TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_by VARCHAR(255) NOT NULL,
+  modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  modified_by VARCHAR(255) NOT NULL
+);
+
+-- Labels Table
+CREATE TABLE labels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  story_map_id UUID NOT NULL REFERENCES story_maps(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  color VARCHAR(7) NOT NULL DEFAULT '#3B82F6',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_by VARCHAR(255) NOT NULL,
+  modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  modified_by VARCHAR(255) NOT NULL
 );
 
 -- Story-Tags Junction Table (Many-to-Many)
@@ -1207,15 +1457,15 @@ CREATE TABLE story_links (
 -- Comments Table
 CREATE TABLE comments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
-  release_id UUID REFERENCES releases(id) ON DELETE CASCADE,
+  entity_type VARCHAR(50) NOT NULL,  -- 'journey', 'step', 'story', 'release'
+  entity_id UUID NOT NULL,
   author_id VARCHAR(255) NOT NULL,
   author VARCHAR(255) NOT NULL,
   avatar_url TEXT,
   content TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CHECK (story_id IS NOT NULL OR release_id IS NOT NULL)  -- Must belong to something
+  CHECK (entity_type IN ('journey', 'step', 'story', 'release'))  -- Must belong to something
 );
 
 -- Attachments Table
@@ -1248,8 +1498,8 @@ CREATE INDEX idx_stories_step_id ON stories(step_id);
 CREATE INDEX idx_stories_release_id ON stories(release_id);
 CREATE INDEX idx_story_links_source ON story_links(source_story_id);
 CREATE INDEX idx_story_links_target ON story_links(target_story_id);
-CREATE INDEX idx_comments_story_id ON comments(story_id);
-CREATE INDEX idx_comments_release_id ON comments(release_id);
+CREATE INDEX idx_comments_entity ON comments(entity_type, entity_id);
+CREATE INDEX idx_attachments_story_id ON attachments(story_id);
 
 -- Status filtering
 CREATE INDEX idx_stories_status ON stories(status);
@@ -1331,6 +1581,14 @@ Authorization: Bearer <jwt_token>
 ### 9.2 RESTful API Structure
 
 ```
+# StoryMaps
+GET    /api/story_maps              # List all story maps
+GET    /api/story_maps/:id          # Get one story map
+POST   /api/story_maps              # Create story map
+PATCH  /api/story_maps/:id          # Update story map
+DELETE /api/story_maps/:id          # Delete story map
+POST   /api/story_maps/:id/reorder  # Reorder story map
+
 # Journeys
 GET    /api/journeys              # List all journeys
 GET    /api/journeys/:id          # Get one journey

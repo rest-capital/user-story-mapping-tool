@@ -4,6 +4,7 @@ import { HealthModule } from './modules/health';
 import { AuthModule } from './modules/auth/auth.module';
 import { SupabaseModule } from './modules/supabase/supabase.module';
 import { PrismaModule } from './modules/prisma';
+import { StoryMapsModule } from './modules/story-maps/story-maps.module';
 import { JourneysModule } from './modules/journeys/journeys.module';
 import { StepsModule } from './modules/steps/steps.module';
 import { ReleasesModule } from './modules/releases/releases.module';
@@ -24,6 +25,7 @@ import { CollaborationModule } from './modules/collaboration/collaboration.modul
     SupabaseModule,
     AuthModule,
     HealthModule,
+    StoryMapsModule,
     JourneysModule,
     StepsModule,
     ReleasesModule,

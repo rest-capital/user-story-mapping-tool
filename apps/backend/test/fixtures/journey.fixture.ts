@@ -7,28 +7,32 @@ export const journeyFixtures = {
   /**
    * Minimal valid journey
    */
-  minimal: () => ({
+  minimal: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Journey'),
   }),
 
   /**
    * Journey with custom name
    */
-  withName: (name: string) => ({
+  withName: (storyMapId: string, name: string) => ({
+    story_map_id: storyMapId,
     name,
   }),
 
   /**
    * Journey with empty name (for validation testing)
    */
-  invalidEmpty: () => ({
+  invalidEmpty: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: '',
   }),
 
   /**
    * Journey with very long name
    */
-  longName: () => ({
+  longName: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: 'A'.repeat(300),
   }),
 };

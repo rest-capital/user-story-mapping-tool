@@ -25,18 +25,22 @@ export class PersonasService extends BaseService {
 
   /**
    * Get all personas
+   * Workspace-scoped: filtered by story_map_id
    */
-  async findAll(): Promise<PersonaResponseDto[]> {
+  async findAll(storyMapId: string): Promise<PersonaResponseDto[]> {
+    this.validateRequired(storyMapId, 'storyMapId');
+
     return this.executeOperation(
       async () => {
         const personas = await this.prisma.persona.findMany({
+          where: { storyMapId },
           orderBy: { name: 'asc' },
         });
 
         return personas.map((persona) => this.toResponseDto(persona));
       },
       'findAllPersonas',
-      {},
+      { storyMapId },
     );
   }
 
@@ -65,24 +69,41 @@ export class PersonasService extends BaseService {
 
   /**
    * Create a new persona
+   * Workspace-scoped: validates story_map_id and user access
    */
-  async create(createDto: CreatePersonaDto): Promise<PersonaResponseDto> {
+  async create(createDto: CreatePersonaDto, userId: string): Promise<PersonaResponseDto> {
     this.validateRequired(createDto.name, 'name');
+    this.validateRequired(createDto.story_map_id, 'story_map_id', 'Persona');
+    this.validateRequired(userId, 'userId');
 
     return this.executeOperation(
       async () => {
+        // Verify story map exists and user has access
+        const storyMap = await this.prisma.storyMap.findFirst({
+          where: {
+            id: createDto.story_map_id,
+            createdBy: userId,
+          },
+        });
+
+        if (!storyMap) {
+          throw new PersonaError('Story map not found or access denied');
+        }
+
         const persona = await this.prisma.persona.create({
           data: {
+            storyMapId: createDto.story_map_id,
             name: createDto.name,
             description: createDto.description || '',
             avatarUrl: createDto.avatar_url || null,
+            createdBy: userId,
           },
         });
 
         return this.toResponseDto(persona);
       },
       'createPersona',
-      { name: createDto.name },
+      { name: createDto.name, storyMapId: createDto.story_map_id, userId },
     );
   }
 
@@ -92,8 +113,10 @@ export class PersonasService extends BaseService {
   async update(
     id: string,
     updateDto: UpdatePersonaDto,
+    userId: string,
   ): Promise<PersonaResponseDto> {
     this.validateRequired(id, 'id', 'Persona');
+    this.validateRequired(userId, 'userId');
 
     return this.executeOperation(
       async () => {
@@ -107,7 +130,7 @@ export class PersonasService extends BaseService {
 
         // CRITICAL: Conditional assignment to prevent undefined overwrites
         // Transform snake_case DTO → camelCase Prisma
-        const updateData: any = {};
+        const updateData: any = { updatedBy: userId };
 
         if (updateDto.name !== undefined) updateData.name = updateDto.name;
         if (updateDto.description !== undefined)
@@ -123,7 +146,7 @@ export class PersonasService extends BaseService {
         return this.toResponseDto(updatedPersona);
       },
       'updatePersona',
-      { personaId: id },
+      { personaId: id, userId },
     );
   }
 
@@ -163,6 +186,7 @@ export class PersonasService extends BaseService {
   private toResponseDto(persona: any): PersonaResponseDto {
     return {
       id: persona.id,
+      story_map_id: persona.storyMapId,
       name: persona.name,
       description: persona.description,
       avatar_url: persona.avatarUrl,

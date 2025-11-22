@@ -1,10 +1,24 @@
 
-import {ApiProperty} from '@nestjs/swagger'
-import {IsOptional,IsString} from 'class-validator'
+import {ApiExtraModels,ApiProperty} from '@nestjs/swagger'
+import {IsNotEmpty,IsOptional,IsString,ValidateNested} from 'class-validator'
+import {Type} from 'class-transformer'
 
+export class JourneyStoryMapIdNameUniqueInputDto {
+    @ApiProperty({
+  type: 'string',
+})
+@IsNotEmpty()
+@IsString()
+storyMapId: string ;
+@ApiProperty({
+  type: 'string',
+})
+@IsNotEmpty()
+@IsString()
+name: string ;
+  }
 
-
-
+@ApiExtraModels(JourneyStoryMapIdNameUniqueInputDto)
 export class ConnectJourneyDto {
   @ApiProperty({
   type: 'string',
@@ -14,10 +28,11 @@ export class ConnectJourneyDto {
 @IsString()
 id?: string ;
 @ApiProperty({
-  type: 'string',
+  type: JourneyStoryMapIdNameUniqueInputDto,
   required: false,
 })
 @IsOptional()
-@IsString()
-name?: string ;
+@ValidateNested()
+@Type(() => JourneyStoryMapIdNameUniqueInputDto)
+storyMapId_name?: JourneyStoryMapIdNameUniqueInputDto ;
 }

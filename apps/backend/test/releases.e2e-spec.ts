@@ -20,10 +20,12 @@ import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import { releaseFixtures } from './fixtures/release.fixture';
 import { ensureUnassignedRelease } from './helpers/release-setup';
+import { createStoryMap } from './factories';
 
 describe('Releases (E2E) - Tier 1', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -33,6 +35,7 @@ describe('Releases (E2E) - Tier 1', () => {
     // Auth token is created fresh for each test
     // Database cleanup happens in global setup.ts
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -41,7 +44,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
   describe('POST /api/releases', () => {
     it('should create a release with valid data', async () => {
-      const releaseData = releaseFixtures.minimal();
+      const releaseData = releaseFixtures.minimal(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -51,6 +54,7 @@ describe('Releases (E2E) - Tier 1', () => {
       // Verify response structure
       expect(response.body).toMatchObject({
         id: expect.any(String),
+        story_map_id: storyMap.id,
         name: releaseData.name,
         description: releaseData.description,
         sort_order: expect.any(Number),
@@ -65,7 +69,7 @@ describe('Releases (E2E) - Tier 1', () => {
     });
 
     it('should reject unauthenticated requests', async () => {
-      const releaseData = releaseFixtures.minimal();
+      const releaseData = releaseFixtures.minimal(storyMap.id);
 
       await request(app.getHttpServer())
         .post('/api/releases')
@@ -74,7 +78,7 @@ describe('Releases (E2E) - Tier 1', () => {
     });
 
     it('should reject invalid data (empty name)', async () => {
-      const invalidData = releaseFixtures.invalidEmpty();
+      const invalidData = releaseFixtures.invalidEmpty(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -84,14 +88,82 @@ describe('Releases (E2E) - Tier 1', () => {
       // Verify error message
       expect(response.body).toHaveProperty('message');
     });
+
+    it('should auto-calculate sort_order correctly (0-based increment)', async () => {
+      // Note: Unassigned release already exists with sortOrder=0
+      // When counting existing releases: count=1, so first custom release gets sortOrder=1
+      // But the service uses 0-based indexing where sortOrder = count
+      // This means: count(Unassigned)=1 → sortOrder=1 for first custom release
+      // However, if database is clean, first release gets 0
+
+      // Create a fresh story map for this test to ensure clean state
+      const testMap = await createStoryMap(app, authToken);
+
+      // Get the Unassigned release's sort order
+      const existingReleases = await authenticatedRequest(app, authToken)
+        .get(`/api/releases?story_map_id=${testMap.id}`)
+        .expect(200);
+
+      const unassignedSortOrder = existingReleases.body[0].sort_order;
+      expect(unassignedSortOrder).toBe(0); // Unassigned should be 0
+      expect(existingReleases.body.length).toBe(1); // Only Unassigned exists
+
+      // Create 3 releases and verify sort_order increments
+      const release1 = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseFixtures.minimal(testMap.id))
+        .expect(201);
+
+      const release2 = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseFixtures.minimal(testMap.id))
+        .expect(201);
+
+      const release3 = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseFixtures.minimal(testMap.id))
+        .expect(201);
+
+      // Verify sort_order increments (count-based: 1, 2, 3 because Unassigned exists)
+      expect(release1.body.sort_order).toBe(1);
+      expect(release2.body.sort_order).toBe(2);
+      expect(release3.body.sort_order).toBe(3);
+    });
+
+    it('should create release with optional fields (dates, shipped)', async () => {
+      const releaseData = {
+        story_map_id: storyMap.id,
+        name: 'Q1 Release',
+        description: 'First quarter release',
+        start_date: '2024-01-01T00:00:00.000Z',
+        due_date: '2024-03-31T23:59:59.999Z',
+        shipped: false,
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseData)
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        id: expect.any(String),
+        story_map_id: storyMap.id,
+        name: 'Q1 Release',
+        description: 'First quarter release',
+        start_date: '2024-01-01T00:00:00.000Z',
+        due_date: '2024-03-31T23:59:59.999Z',
+        shipped: false,
+        is_unassigned: false,
+      });
+    });
   });
 
   describe('GET /api/releases', () => {
     it('should list all releases sorted by sort_order', async () => {
       // Create multiple releases
-      const release1Data = releaseFixtures.withName('Release 1');
-      const release2Data = releaseFixtures.withName('Release 2');
-      const release3Data = releaseFixtures.withName('Release 3');
+      const release1Data = releaseFixtures.withName(storyMap.id, 'Release 1');
+      const release2Data = releaseFixtures.withName(storyMap.id, 'Release 2');
+      const release3Data = releaseFixtures.withName(storyMap.id, 'Release 3');
 
       const release1 = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -109,7 +181,7 @@ describe('Releases (E2E) - Tier 1', () => {
         .expect(201);
 
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/releases')
+        .get(`/api/releases?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify we get an array
@@ -134,7 +206,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
     it('should return only the Unassigned release when no custom releases exist', async () => {
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/releases')
+        .get(`/api/releases?story_map_id=${storyMap.id}`)
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
@@ -142,11 +214,47 @@ describe('Releases (E2E) - Tier 1', () => {
       expect(response.body[0].is_unassigned).toBe(true);
       expect(response.body[0].name).toBe('Unassigned');
     });
+
+    it('should only return releases for the specified story map (workspace isolation)', async () => {
+      // Create a second story map
+      const storyMap2 = await createStoryMap(app, authToken);
+
+      // Create releases in both story maps
+      const release1 = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseFixtures.withName(storyMap.id, 'Release in Map 1'))
+        .expect(201);
+
+      const release2 = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseFixtures.withName(storyMap2.id, 'Release in Map 2'))
+        .expect(201);
+
+      // Get releases for first story map
+      const response1 = await authenticatedRequest(app, authToken)
+        .get(`/api/releases?story_map_id=${storyMap.id}`)
+        .expect(200);
+
+      // Should only include releases from first story map
+      const releaseIds1 = response1.body.map((r: any) => r.id);
+      expect(releaseIds1).toContain(release1.body.id);
+      expect(releaseIds1).not.toContain(release2.body.id);
+
+      // Get releases for second story map
+      const response2 = await authenticatedRequest(app, authToken)
+        .get(`/api/releases?story_map_id=${storyMap2.id}`)
+        .expect(200);
+
+      // Should only include releases from second story map
+      const releaseIds2 = response2.body.map((r: any) => r.id);
+      expect(releaseIds2).toContain(release2.body.id);
+      expect(releaseIds2).not.toContain(release1.body.id);
+    });
   });
 
   describe('GET /api/releases/:id', () => {
     it('should get a single release by ID', async () => {
-      const releaseData = releaseFixtures.withName('Test Release');
+      const releaseData = releaseFixtures.withName(storyMap.id, 'Test Release');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -185,7 +293,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
   describe('PATCH /api/releases/:id', () => {
     it('should update release name and description', async () => {
-      const releaseData = releaseFixtures.withName('Original Name');
+      const releaseData = releaseFixtures.withName(storyMap.id, 'Original Name');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -213,6 +321,35 @@ describe('Releases (E2E) - Tier 1', () => {
       expect(response.body.updated_at).not.toBe(release.updated_at);
     });
 
+    it('should update dates and shipped status', async () => {
+      const releaseData = releaseFixtures.withName(storyMap.id, 'Q2 Release');
+
+      const createResponse = await authenticatedRequest(app, authToken)
+        .post('/api/releases')
+        .send(releaseData)
+        .expect(201);
+
+      const release = createResponse.body;
+
+      // Update dates and shipped status
+      const updateData = {
+        start_date: '2024-04-01T00:00:00.000Z',
+        due_date: '2024-06-30T23:59:59.999Z',
+        shipped: true,
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .patch(`/api/releases/${release.id}`)
+        .send(updateData)
+        .expect(200);
+
+      // Verify fields were updated
+      expect(response.body.start_date).toBe(updateData.start_date);
+      expect(response.body.due_date).toBe(updateData.due_date);
+      expect(response.body.shipped).toBe(true);
+      expect(response.body.id).toBe(release.id);
+    });
+
     it('should return 404 when updating non-existent release', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
@@ -226,9 +363,9 @@ describe('Releases (E2E) - Tier 1', () => {
   describe('DELETE /api/releases/:id', () => {
     it('should delete a regular release', async () => {
       // CRITICAL: Ensure Unassigned release exists (required for delete operation)
-      await ensureUnassignedRelease();
+      await ensureUnassignedRelease(storyMap.id);
 
-      const releaseData = releaseFixtures.withName('Release to Delete');
+      const releaseData = releaseFixtures.withName(storyMap.id, 'Release to Delete');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/releases')
@@ -256,7 +393,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
     it('should return 404 when deleting non-existent release', async () => {
       // CRITICAL: Ensure Unassigned release exists (required for delete operation)
-      await ensureUnassignedRelease();
+      await ensureUnassignedRelease(storyMap.id);
 
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
@@ -267,7 +404,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
     it('should prevent deletion of Unassigned release', async () => {
       // CRITICAL: Ensure Unassigned release exists
-      const unassigned = await ensureUnassignedRelease();
+      const unassigned = await ensureUnassignedRelease(storyMap.id);
 
       // Try to delete the Unassigned release
       const response = await authenticatedRequest(app, authToken)

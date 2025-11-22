@@ -1,35 +1,44 @@
 # Data Model Quick Reference Card
 
-**Version:** 2.0 (Corrected)  
+**Version:** 3.0 (Updated)  
+**Date:** 2025-11-22  
 **Auth:** Supabase JWT (all endpoints require `Authorization: Bearer <token>`)
 
 **One-page cheat sheet for backend API design**
 
 ---
 
-## 🎯 Core Entities (6)
+## 🎯 Core Entities (8)
 
 | Entity | Purpose | Key Fields | Sort Order | Unique Constraints |
-|--------|---------|------------|------------|-------------------|
-| **Journey** | User workflow group | `name`, `sort_order`, `color` | 0, 1, 2... | `name` unique |
+|--------|---------|------------|------------|----------------------|
+| **StoryMap** | Workspace container | `name`, `created_by`, `modified_by` | N/A | None |
+| **Journey** | User workflow group | `story_map_id`, `name`, `sort_order`, `color` | 0, 1, 2... | `name` unique per story map |
 | **Step** | Activity in journey | `journey_id`, `name`, `sort_order` | 0, 1, 2... | None |
 | **Story** | User story/task | `step_id`, `release_id`, `title`, `status`, `size` | **1000, 2000, 3000...** | None |
-| **Release** | Sprint/iteration | `name`, `start_date`, `due_date`, `is_unassigned` | 0, 1, 2... | `is_unassigned` (only 1 true) |
-| **Tag** | Category label | `name`, `color` | N/A | `name` unique |
-| **Persona** | User role | `name`, `avatar_url` | N/A | None |
+| **Release** | Sprint/iteration | `story_map_id`, `name`, `start_date`, `due_date`, `is_unassigned` | 0, 1, 2... | `is_unassigned` (only 1 true per map) |
+| **Tag** | Category label | `story_map_id`, `name` | N/A | `name` unique per story map | ✅ NO color field |
+| **Persona** | User role | `story_map_id`, `name`, `avatar_url` | N/A | None |
+| **Label** | Visual story badge | `story_map_id`, `name`, `color` | N/A | None |
 
 ---
 
 ## 🔗 Relationships
 
 ```
+StoryMap (1) → (N) Journeys
+StoryMap (1) → (N) Releases
+StoryMap (1) → (N) Labels
+StoryMap (1) → (N) Tags
+StoryMap (1) → (N) Personas
+
 Journey (1) → (N) Steps
 Step (1) → (N) Stories
 Release (1) → (N) Stories
 Story (N) ↔ (N) Tags (junction table)
 Story (N) ↔ (N) Personas (junction table)
 Story (N) → (N) Story (dependencies, self-ref)
-Story (1) → (N) Comments
+Story/Release/Journey/Step (1) → (N) Comments (polymorphic)
 Story (1) → (N) Attachments
 ```
 
@@ -39,12 +48,14 @@ Story (1) → (N) Attachments
 
 | Delete | What Happens | Critical Implementation |
 |--------|-------------|------------------------|
+| StoryMap | → Cascade delete Journeys, Releases, Tags, Labels, Personas → Cascade delete Steps → Cascade delete Stories | Standard CASCADE |
 | Journey | → Cascade delete Steps → Cascade delete Stories | Standard CASCADE |
 | Step | → Cascade delete Stories | Standard CASCADE |
 | Release | → Move Stories to Unassigned release (soft cascade) | ⚠️ **MUST**: `UPDATE stories SET release_id = unassigned WHERE release_id = ?` BEFORE `DELETE FROM releases` |
 | Story | → Remove from all dependencies, delete comments/attachments | ⚠️ **MUST**: `DELETE FROM story_links WHERE source_story_id = ? OR target_story_id = ?` BEFORE deleting story |
 | Tag | → Remove from all stories (soft) | `DELETE FROM story_tags WHERE tag_id = ?` |
 | Persona | → Remove from all stories (soft) | `DELETE FROM story_personas WHERE persona_id = ?` |
+| Label | → Stories revert to default label (soft) | Stories using this label revert to: `{ id: 'default', name: 'Story', color: '#3B82F6' }` |
 
 ---
 
@@ -178,6 +189,19 @@ ORDER BY sort_order;
 
 **All endpoints require:** `Authorization: Bearer <jwt_token>`
 
+### StoryMaps
+```
+GET    /api/storymaps             List all
+POST   /api/storymaps             Create
+        Body: { name, description? }
+        ⚠️ Backend MUST auto-create "Unassigned" release:
+          INSERT INTO releases (story_map_id, name, is_unassigned, sort_order)
+          VALUES (new_storymap_id, 'Unassigned', true, 999999);
+        
+PATCH  /api/storymaps/:id         Update
+DELETE /api/storymaps/:id         Delete (cascades to all child entities)
+```
+
 ### Journeys
 ```
 GET    /api/journeys              List all
@@ -226,10 +250,17 @@ POST   /api/stories/:id/dependencies           Add
 DELETE /api/stories/:sid/dependencies/:tid     Remove
 ```
 
-### Comments (JWT Auth Required)
+### Comments (JWT Auth Required - Polymorphic)
 ```
-GET    /api/stories/:id/comments               Get all (with is_current_user flag)
-POST   /api/stories/:id/comments               Create
+GET    /api/journeys/:id/comments              Get all for journey
+GET    /api/steps/:id/comments                 Get all for step
+GET    /api/stories/:id/comments               Get all for story
+GET    /api/releases/:id/comments              Get all for release
+
+POST   /api/journeys/:id/comments              Create on journey
+POST   /api/steps/:id/comments                 Create on step
+POST   /api/stories/:id/comments               Create on story
+POST   /api/releases/:id/comments              Create on release
         Body: { content }                       ← ONLY content
         Backend extracts from JWT:
           - author_id (from 'sub' claim)
@@ -243,6 +274,42 @@ PATCH  /api/comments/:id                       Update (must be author)
         
 DELETE /api/comments/:id                       Delete (must be author)
         Backend validates: comment.author_id === jwt.sub
+```
+
+### Tags
+```
+GET    /api/tags                  List all
+POST   /api/tags                  Create
+        Body: { story_map_id, name }           ⚠️ NO color field
+        Backend extracts: created_by, modified_by from JWT
+PATCH  /api/tags/:id              Update
+        Body: { name }
+        Backend updates: modified_at, modified_by from JWT
+DELETE /api/tags/:id               Delete (removes from stories)
+```
+
+### Personas
+```
+GET    /api/personas              List all
+POST   /api/personas              Create
+        Body: { story_map_id, name, description?, avatar_url? }
+        Backend extracts: created_by, modified_by from JWT
+PATCH  /api/personas/:id          Update
+        Body: { name?, description?, avatar_url? }
+        Backend updates: modified_at, modified_by from JWT
+DELETE /api/personas/:id           Delete (removes from stories)
+```
+
+### Labels
+```
+GET    /api/labels                List all
+POST   /api/labels                Create
+        Body: { story_map_id, name, color }    ✅ HAS color field
+        Backend extracts: created_by, modified_by from JWT
+PATCH  /api/labels/:id            Update
+        Body: { name?, color? }
+        Backend updates: modified_at, modified_by from JWT
+DELETE /api/labels/:id             Delete (stories revert to default)
 ```
 
 ### Analytics
@@ -350,14 +417,21 @@ Body: { content: "Great idea!" }
 }
 ```
 
-### Label (Embedded in Story)
+### Label (Separate Entity, Shared Across Story Map)
 ```javascript
 {
   id: "label-1",
+  story_map_id: "storymap-1",  // Scopes to story map
   name: "Feature",
-  color: "#3B82F6"
+  color: "#3B82F6",
+  created_at: Date,
+  created_by: "user-id",
+  modified_at: Date,
+  modified_by: "user-id"
 }
-// Not a separate table
+// ✅ Stored in separate labels table
+// Stories reference labels, but may store denormalized label data
+// Labels are shared across all stories in a story map
 ```
 
 ---
@@ -439,9 +513,27 @@ CREATE INDEX idx_stories_release ON stories(release_id);
 CREATE INDEX idx_story_links_source ON story_links(source_story_id);
 CREATE INDEX idx_story_links_target ON story_links(target_story_id);
 
+-- Junction table indexes
+CREATE INDEX idx_story_tags_story ON story_tags(story_id);
+CREATE INDEX idx_story_tags_tag ON story_tags(tag_id);
+CREATE INDEX idx_story_personas_story ON story_personas(story_id);
+CREATE INDEX idx_story_personas_persona ON story_personas(persona_id);
+
+-- Polymorphic comment indexes
+CREATE INDEX idx_comments_entity ON comments(entity_type, entity_id);
+CREATE INDEX idx_comments_author ON comments(author_id);
+
+-- Scope indexes (story_map_id)
+CREATE INDEX idx_journeys_storymap ON journeys(story_map_id);
+CREATE INDEX idx_releases_storymap ON releases(story_map_id);
+CREATE INDEX idx_tags_storymap ON tags(story_map_id);
+CREATE INDEX idx_personas_storymap ON personas(story_map_id);
+CREATE INDEX idx_labels_storymap ON labels(story_map_id);
+
 -- Query optimization
 CREATE INDEX idx_stories_status ON stories(status);
 CREATE INDEX idx_stories_cell ON stories(step_id, release_id);
+CREATE INDEX idx_releases_unassigned ON releases(is_unassigned);
 ```
 
 ---
@@ -500,5 +592,5 @@ CREATE INDEX idx_stories_cell ON stories(step_id, release_id);
 
 ---
 
-**Version:** 2.0 (Corrected)  
-**Last Updated:** 2025-11-18
+**Version:** 3.0 (Updated)  
+**Last Updated:** 2025-11-22

@@ -1,5 +1,6 @@
 
 import {ApiProperty} from '@nestjs/swagger'
+import {StoryMap} from './story-map.entity'
 import {Story} from './story.entity'
 import {Comment} from './comment.entity'
 
@@ -9,6 +10,10 @@ export class Release {
   type: 'string',
 })
 id: string ;
+@ApiProperty({
+  type: 'string',
+})
+storyMapId: string ;
 @ApiProperty({
   type: 'string',
 })
@@ -61,6 +66,11 @@ createdBy: string ;
   nullable: true,
 })
 updatedBy: string  | null;
+@ApiProperty({
+  type: () => StoryMap,
+  required: false,
+})
+storyMap?: StoryMap ;
 @ApiProperty({
   type: () => Story,
   isArray: true,

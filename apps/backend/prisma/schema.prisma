@@ -49,9 +49,28 @@ enum StoryLinkType {
 // CORE ENTITIES
 // ============================================================================
 
+model StoryMap {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String   @map("created_by")
+  updatedBy   String?  @map("updated_by")
+
+  // Relationships
+  journeys Journey[]
+  releases Release[]
+  tags     Tag[]
+  personas Persona[]
+
+  @@map("story_maps")
+}
+
 model Journey {
   id          String   @id @default(uuid())
-  name        String   @unique
+  storyMapId  String   @map("story_map_id")
+  name        String
   description String   @default("")
   sortOrder   Int      @map("sort_order")
   color       String   @default("#8B5CF6")
@@ -61,9 +80,11 @@ model Journey {
   updatedBy   String?  @map("updated_by")
 
   // Relationships
-  steps Step[]
+  storyMap StoryMap @relation(fields: [storyMapId], references: [id], onDelete: Cascade)
+  steps    Step[]
 
-  @@index([sortOrder], name: "idx_journeys_sort")
+  @@unique([storyMapId, name])
+  @@index([storyMapId, sortOrder], name: "idx_journeys_map_sort")
   @@map("journeys")
 }
 
@@ -90,6 +111,7 @@ model Step {
 model Release {
   /// @DtoReadOnly
   id           String    @id @default(uuid())
+  storyMapId   String    @map("story_map_id")
   name         String
   description  String    @default("")
   startDate    DateTime? @map("start_date")
@@ -110,13 +132,15 @@ model Release {
   updatedBy    String?   @map("updated_by")
 
   // Relationships
+  storyMap StoryMap @relation(fields: [storyMapId], references: [id], onDelete: Cascade)
   stories  Story[]
   comments Comment[]
 
-  // Note: Unique constraint on isUnassigned removed because it prevents
-  // creating multiple releases with isUnassigned=false. The business rule
-  // (only one release can have isUnassigned=true) is enforced in the service layer.
-  @@index([sortOrder], name: "idx_releases_sort")
+  // NOTE: Uniqueness of Unassigned release per story map is enforced via partial index
+  // in migration 20251122114700_fix_unique_constraints (Prisma doesn't support partial indexes in schema)
+  // CREATE UNIQUE INDEX "releases_story_map_id_unassigned_key" ON "releases" ("story_map_id") WHERE "is_unassigned" = true;
+
+  @@index([storyMapId, sortOrder], name: "idx_releases_map_sort")
   @@map("releases")
 }
 
@@ -157,27 +181,38 @@ model Story {
 }
 
 model Tag {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  color     String   @default("#8B5CF6")
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  storyMapId String   @map("story_map_id")
+  name       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdBy  String   @map("created_by")
+  updatedBy  String?  @map("updated_by")
 
   // Relationships
-  stories StoryTag[]
+  storyMap StoryMap   @relation(fields: [storyMapId], references: [id], onDelete: Cascade)
+  stories  StoryTag[]
 
+  @@unique([storyMapId, name])
   @@map("tags")
 }
 
 model Persona {
   id          String   @id @default(uuid())
-  name        String   @unique
+  storyMapId  String   @map("story_map_id")
+  name        String
   description String   @default("")
   avatarUrl   String?  @map("avatar_url")
   createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String   @map("created_by")
+  updatedBy   String?  @map("updated_by")
 
   // Relationships
-  stories StoryPersona[]
+  storyMap StoryMap         @relation(fields: [storyMapId], references: [id], onDelete: Cascade)
+  stories  StoryPersona[]
 
+  @@unique([storyMapId, name])
   @@map("personas")
 }
 

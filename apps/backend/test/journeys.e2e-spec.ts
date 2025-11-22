@@ -18,10 +18,12 @@ import request from 'supertest';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
 import { journeyFixtures } from './fixtures/journey.fixture';
+import { createStoryMap } from './factories';
 
 describe('Journeys (E2E) - Tier 1', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -31,6 +33,7 @@ describe('Journeys (E2E) - Tier 1', () => {
     // Auth token is created fresh for each test
     // Database cleanup happens in global setup.ts
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -39,7 +42,7 @@ describe('Journeys (E2E) - Tier 1', () => {
 
   describe('POST /api/journeys', () => {
     it('should create a journey with valid data', async () => {
-      const journeyData = journeyFixtures.minimal();
+      const journeyData = journeyFixtures.minimal(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -49,6 +52,7 @@ describe('Journeys (E2E) - Tier 1', () => {
       // Verify response structure
       expect(response.body).toMatchObject({
         id: expect.any(String),
+        story_map_id: storyMap.id,
         name: journeyData.name,
         sort_order: expect.any(Number),
         created_at: expect.any(String),
@@ -61,7 +65,7 @@ describe('Journeys (E2E) - Tier 1', () => {
     });
 
     it('should reject unauthenticated requests', async () => {
-      const journeyData = journeyFixtures.minimal();
+      const journeyData = journeyFixtures.minimal(storyMap.id);
 
       await request(app.getHttpServer())
         .post('/api/journeys')
@@ -70,7 +74,7 @@ describe('Journeys (E2E) - Tier 1', () => {
     });
 
     it('should reject invalid data (empty name)', async () => {
-      const invalidData = journeyFixtures.invalidEmpty();
+      const invalidData = journeyFixtures.invalidEmpty(storyMap.id);
 
       const response = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -80,14 +84,89 @@ describe('Journeys (E2E) - Tier 1', () => {
       // Verify error message
       expect(response.body).toHaveProperty('message');
     });
+
+    it('should auto-calculate sort_order incrementally', async () => {
+      // Create multiple journeys and verify sort_order increments
+      const journey1Data = journeyFixtures.withName(storyMap.id, 'First Journey');
+      const journey2Data = journeyFixtures.withName(storyMap.id, 'Second Journey');
+      const journey3Data = journeyFixtures.withName(storyMap.id, 'Third Journey');
+
+      const journey1 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey1Data)
+        .expect(201);
+
+      const journey2 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey2Data)
+        .expect(201);
+
+      const journey3 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey3Data)
+        .expect(201);
+
+      // Verify sort_order increments: 0, 1, 2
+      expect(journey1.body.sort_order).toBe(0);
+      expect(journey2.body.sort_order).toBe(1);
+      expect(journey3.body.sort_order).toBe(2);
+    });
+
+    it('should reject duplicate journey names within the same story map', async () => {
+      const journeyData = journeyFixtures.withName(storyMap.id, 'Duplicate Journey');
+
+      // Create first journey
+      await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journeyData)
+        .expect(201);
+
+      // Try to create second journey with same name - should fail with 409 Conflict
+      const response = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journeyData)
+        .expect(409);
+
+      // Verify error message mentions uniqueness
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message.toLowerCase()).toContain('already exists');
+    });
+
+    it('should allow duplicate journey names across different story maps', async () => {
+      // Create a second story map
+      const storyMap2 = await createStoryMap(app, authToken);
+
+      const journeyName = 'Shared Journey Name';
+      const journey1Data = journeyFixtures.withName(storyMap.id, journeyName);
+      const journey2Data = journeyFixtures.withName(storyMap2.id, journeyName);
+
+      // Create journey in first story map
+      const journey1 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey1Data)
+        .expect(201);
+
+      // Create journey with same name in second story map - should succeed
+      const journey2 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey2Data)
+        .expect(201);
+
+      // Verify both exist with same name but different story_map_id
+      expect(journey1.body.name).toBe(journeyName);
+      expect(journey2.body.name).toBe(journeyName);
+      expect(journey1.body.story_map_id).toBe(storyMap.id);
+      expect(journey2.body.story_map_id).toBe(storyMap2.id);
+      expect(journey1.body.id).not.toBe(journey2.body.id);
+    });
   });
 
   describe('GET /api/journeys', () => {
     it('should list all journeys sorted by sort_order', async () => {
       // Create multiple journeys
-      const journey1Data = journeyFixtures.withName('Journey 1');
-      const journey2Data = journeyFixtures.withName('Journey 2');
-      const journey3Data = journeyFixtures.withName('Journey 3');
+      const journey1Data = journeyFixtures.withName(storyMap.id, 'Journey 1');
+      const journey2Data = journeyFixtures.withName(storyMap.id, 'Journey 2');
+      const journey3Data = journeyFixtures.withName(storyMap.id, 'Journey 3');
 
       const journey1 = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -105,7 +184,7 @@ describe('Journeys (E2E) - Tier 1', () => {
         .expect(201);
 
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/journeys')
+        .get(`/api/journeys?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify we get an array
@@ -126,17 +205,55 @@ describe('Journeys (E2E) - Tier 1', () => {
 
     it('should return empty array when no journeys exist', async () => {
       const response = await authenticatedRequest(app, authToken)
-        .get('/api/journeys')
+        .get(`/api/journeys?story_map_id=${storyMap.id}`)
         .expect(200);
 
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body).toHaveLength(0);
     });
+
+    it('should only return journeys for the specified story map (workspace isolation)', async () => {
+      // Create a second story map
+      const storyMap2 = await createStoryMap(app, authToken);
+
+      // Create journeys in both story maps
+      const journey1Data = journeyFixtures.withName(storyMap.id, 'Journey in Map 1');
+      const journey2Data = journeyFixtures.withName(storyMap2.id, 'Journey in Map 2');
+
+      const journey1 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey1Data)
+        .expect(201);
+
+      const journey2 = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journey2Data)
+        .expect(201);
+
+      // Get journeys for first story map
+      const response1 = await authenticatedRequest(app, authToken)
+        .get(`/api/journeys?story_map_id=${storyMap.id}`)
+        .expect(200);
+
+      // Get journeys for second story map
+      const response2 = await authenticatedRequest(app, authToken)
+        .get(`/api/journeys?story_map_id=${storyMap2.id}`)
+        .expect(200);
+
+      // Verify isolation - each story map only sees its own journeys
+      expect(response1.body).toHaveLength(1);
+      expect(response1.body[0].id).toBe(journey1.body.id);
+      expect(response1.body[0].story_map_id).toBe(storyMap.id);
+
+      expect(response2.body).toHaveLength(1);
+      expect(response2.body[0].id).toBe(journey2.body.id);
+      expect(response2.body[0].story_map_id).toBe(storyMap2.id);
+    });
   });
 
   describe('GET /api/journeys/:id', () => {
     it('should get a single journey by ID', async () => {
-      const journeyData = journeyFixtures.withName('Test Journey');
+      const journeyData = journeyFixtures.withName(storyMap.id, 'Test Journey');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -152,6 +269,7 @@ describe('Journeys (E2E) - Tier 1', () => {
       // Verify response matches created journey
       expect(response.body).toMatchObject({
         id: journey.id,
+        story_map_id: storyMap.id,
         name: journey.name,
         sort_order: expect.any(Number),
         created_at: expect.any(String),
@@ -172,7 +290,7 @@ describe('Journeys (E2E) - Tier 1', () => {
 
   describe('PATCH /api/journeys/:id', () => {
     it('should update journey name', async () => {
-      const journeyData = journeyFixtures.withName('Original Name');
+      const journeyData = journeyFixtures.withName(storyMap.id, 'Original Name');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -199,7 +317,7 @@ describe('Journeys (E2E) - Tier 1', () => {
     });
 
     it('should update journey color', async () => {
-      const journeyData = journeyFixtures.minimal();
+      const journeyData = journeyFixtures.minimal(storyMap.id);
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/journeys')
@@ -220,6 +338,29 @@ describe('Journeys (E2E) - Tier 1', () => {
       expect(response.body.color).toBe(updateData.color);
     });
 
+    it('should update journey description', async () => {
+      const journeyData = journeyFixtures.minimal(storyMap.id);
+
+      const createResponse = await authenticatedRequest(app, authToken)
+        .post('/api/journeys')
+        .send(journeyData)
+        .expect(201);
+
+      const journey = createResponse.body;
+
+      const updateData = {
+        description: 'Updated journey description',
+      };
+
+      const response = await authenticatedRequest(app, authToken)
+        .patch(`/api/journeys/${journey.id}`)
+        .send(updateData)
+        .expect(200);
+
+      expect(response.body.description).toBe(updateData.description);
+      expect(response.body.id).toBe(journey.id);
+    });
+
     it('should return 404 when updating non-existent journey', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
@@ -232,7 +373,7 @@ describe('Journeys (E2E) - Tier 1', () => {
 
   describe('DELETE /api/journeys/:id', () => {
     it('should delete a journey', async () => {
-      const journeyData = journeyFixtures.withName('Journey to Delete');
+      const journeyData = journeyFixtures.withName(storyMap.id, 'Journey to Delete');
 
       const createResponse = await authenticatedRequest(app, authToken)
         .post('/api/journeys')

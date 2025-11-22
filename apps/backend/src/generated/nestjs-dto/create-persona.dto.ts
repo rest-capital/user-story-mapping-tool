@@ -20,4 +20,18 @@ name: string ;
 @IsOptional()
 @IsString()
 avatarUrl?: string  | null;
+@ApiProperty({
+  type: 'string',
+})
+@IsNotEmpty()
+@IsString()
+createdBy: string ;
+@ApiProperty({
+  type: 'string',
+  required: false,
+  nullable: true,
+})
+@IsOptional()
+@IsString()
+updatedBy?: string  | null;
 }

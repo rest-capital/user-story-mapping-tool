@@ -61,7 +61,7 @@ export async function createAuthToken(
  *
  * @param app - NestJS application instance
  * @param token - JWT access token
- * @returns Supertest request with Authorization header
+ * @returns Supertest agent wrapper with pre-set Authorization header
  *
  * @example
  * const response = await authenticatedRequest(app, token)
@@ -72,7 +72,18 @@ export function authenticatedRequest(
   app: INestApplication,
   token: string,
 ) {
-  return request(app.getHttpServer()).set('Authorization', `Bearer ${token}`);
+  const agent = request(app.getHttpServer());
+
+  // Return an object with HTTP method functions that add auth header
+  return {
+    get: (url: string) => agent.get(url).set('Authorization', `Bearer ${token}`),
+    post: (url: string) => agent.post(url).set('Authorization', `Bearer ${token}`),
+    put: (url: string) => agent.put(url).set('Authorization', `Bearer ${token}`),
+    patch: (url: string) => agent.patch(url).set('Authorization', `Bearer ${token}`),
+    delete: (url: string) => agent.delete(url).set('Authorization', `Bearer ${token}`),
+    head: (url: string) => agent.head(url).set('Authorization', `Bearer ${token}`),
+    options: (url: string) => agent.options(url).set('Authorization', `Bearer ${token}`),
+  };
 }
 
 /**

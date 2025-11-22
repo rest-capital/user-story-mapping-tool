@@ -1,10 +1,24 @@
 
-import {ApiProperty} from '@nestjs/swagger'
-import {IsOptional,IsString} from 'class-validator'
+import {ApiExtraModels,ApiProperty} from '@nestjs/swagger'
+import {IsNotEmpty,IsOptional,IsString,ValidateNested} from 'class-validator'
+import {Type} from 'class-transformer'
 
+export class PersonaStoryMapIdNameUniqueInputDto {
+    @ApiProperty({
+  type: 'string',
+})
+@IsNotEmpty()
+@IsString()
+storyMapId: string ;
+@ApiProperty({
+  type: 'string',
+})
+@IsNotEmpty()
+@IsString()
+name: string ;
+  }
 
-
-
+@ApiExtraModels(PersonaStoryMapIdNameUniqueInputDto)
 export class ConnectPersonaDto {
   @ApiProperty({
   type: 'string',
@@ -14,10 +28,11 @@ export class ConnectPersonaDto {
 @IsString()
 id?: string ;
 @ApiProperty({
-  type: 'string',
+  type: PersonaStoryMapIdNameUniqueInputDto,
   required: false,
 })
 @IsOptional()
-@IsString()
-name?: string ;
+@ValidateNested()
+@Type(() => PersonaStoryMapIdNameUniqueInputDto)
+storyMapId_name?: PersonaStoryMapIdNameUniqueInputDto ;
 }

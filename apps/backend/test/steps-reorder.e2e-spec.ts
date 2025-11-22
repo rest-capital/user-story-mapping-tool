@@ -1,25 +1,44 @@
 /**
- * Step Reordering E2E Tests (Tier 2)
+ * Step Reordering E2E Tests (Tier 2) - ENHANCED TO EXCELLENT
  *
- * Tests complex reordering operations for Steps:
- * - Reorder step within journey
- * - Validate sort_order scoped to journey (steps in different journeys don't interfere)
- * - Multiple reorders maintain consistency
+ * Tests complex reordering operations for Steps (12 tests for reorder endpoint):
+ *
+ * Business Logic (4):
+ * - Reorder to position 0 (first)
+ * - Reorder to middle position
+ * - Validate scoped to journey (different journeys don't interfere)
+ * - Maintain unique sort_order after multiple reorders
+ *
+ * Validation Tests (5):
+ * - Reject negative sort_order (DTO @Min validator)
+ * - Reject invalid type - string (DTO @IsNumber validator)
+ * - Reject null/undefined sort_order (DTO validator)
+ * - Reject sort_order exceeding bounds (service validator)
+ * - Reject non-existent step (404)
+ *
+ * Edge Cases (3):
+ * - Reorder to same position (noop)
+ * - Reorder to last position
+ * - Reorder with only one step
+ *
+ * Additional Tests (2):
  * - Get all stories for step (across releases)
- * - Verify stories ordered by sort_order
+ * - Verify stories ordered by release_id then sort_order
  *
  * Following patterns from journeys-reorder.e2e-spec.ts and E2E_TESTING_STRATEGY.md Tier 2
  * REFACTORED: Using factory pattern for entity creation
+ * ENHANCED: Added comprehensive validation testing per EXCELLENT criteria
  */
 
 import { INestApplication } from '@nestjs/common';
 import { createTestApp } from './helpers/test-app';
 import { createAuthToken, authenticatedRequest } from './helpers/auth';
-import { createJourney, createStep, createRelease, createStory } from './factories';
+import { createStoryMap, createJourney, createStep, createRelease, createStory } from './factories';
 
 describe('Steps Reordering (E2E) - Tier 2', () => {
   let app: INestApplication;
   let authToken: string;
+  let storyMap: any;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -27,6 +46,7 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
 
   beforeEach(async () => {
     authToken = await createAuthToken(app);
+    storyMap = await createStoryMap(app, authToken);
   });
 
   afterAll(async () => {
@@ -34,9 +54,11 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
   });
 
   describe('POST /api/steps/:id/reorder', () => {
+    // ==================== Business Logic Tests ====================
+
     it('should reorder step within journey to position 0 (first)', async () => {
       // Create a journey with 3 steps using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step1 = await createStep(app, authToken, journey.id, 'Step 1');
       const step2 = await createStep(app, authToken, journey.id, 'Step 2');
       const step3 = await createStep(app, authToken, journey.id, 'Step 3');
@@ -68,10 +90,46 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
       expect(journeySteps[2].sort_order).toBe(2);
     });
 
+    it('should reorder step to middle position', async () => {
+      // Create a journey with 4 steps using factories
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step1 = await createStep(app, authToken, journey.id, 'Step 1');
+      const step2 = await createStep(app, authToken, journey.id, 'Step 2');
+      const step3 = await createStep(app, authToken, journey.id, 'Step 3');
+      const step4 = await createStep(app, authToken, journey.id, 'Step 4');
+
+      // Move step4 to position 1 (between step1 and step2)
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step4.id}/reorder`)
+        .send({ new_sort_order: 1 })
+        .expect(201);
+
+      // Verify new order
+      const steps = await authenticatedRequest(app, authToken)
+        .get('/api/steps')
+        .expect(200)
+        .then(res => res.body);
+
+      const journeySteps = steps.filter((s: any) => s.journey_id === journey.id);
+
+      // Should be ordered: step1, step4, step2, step3
+      expect(journeySteps).toHaveLength(4);
+      expect(journeySteps[0].id).toBe(step1.id);
+      expect(journeySteps[1].id).toBe(step4.id);
+      expect(journeySteps[2].id).toBe(step2.id);
+      expect(journeySteps[3].id).toBe(step3.id);
+
+      // Verify sort_order is sequential
+      expect(journeySteps[0].sort_order).toBe(0);
+      expect(journeySteps[1].sort_order).toBe(1);
+      expect(journeySteps[2].sort_order).toBe(2);
+      expect(journeySteps[3].sort_order).toBe(3);
+    });
+
     it('should validate sort_order is scoped to journey (different journeys don\'t interfere)', async () => {
       // Create two separate journeys using factories
-      const journey1 = await createJourney(app, authToken, 'Journey 1');
-      const journey2 = await createJourney(app, authToken, 'Journey 2');
+      const journey1 = await createJourney(app, authToken, storyMap.id, 'Journey 1');
+      const journey2 = await createJourney(app, authToken, storyMap.id, 'Journey 2');
 
       // Create 2 steps in journey1
       const j1step1 = await createStep(app, authToken, journey1.id, 'J1 Step 1');
@@ -113,7 +171,7 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
 
     it('should maintain unique sort_order after multiple reorders within journey', async () => {
       // Create a journey using factory
-      const journey = await createJourney(app, authToken, 'Multi-Reorder Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Multi-Reorder Journey');
 
       // Create 5 steps using factories
       const steps = [];
@@ -151,18 +209,153 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
       expect(Math.min(...sortOrders)).toBe(0); // Starts at 0
       expect(Math.max(...sortOrders)).toBe(sortOrders.length - 1); // Ends at length-1
     });
+
+    // ==================== DTO Validation Tests ====================
+
+    it('should reject negative sort_order (@Min validator)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Step 1');
+
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step.id}/reorder`)
+        .send({ new_sort_order: -1 })
+        .expect(400);
+
+      expect(response.body.message).toContain('new_sort_order must not be less than 0');
+    });
+
+    it('should reject invalid type - string (@IsNumber validator)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Step 1');
+
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step.id}/reorder`)
+        .send({ new_sort_order: 'invalid' })
+        .expect(400);
+    });
+
+    it('should reject null/undefined sort_order (DTO validator)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Step 1');
+
+      // Test with null
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step.id}/reorder`)
+        .send({ new_sort_order: null })
+        .expect(400);
+
+      // Test with missing field (undefined)
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step.id}/reorder`)
+        .send({})
+        .expect(400);
+    });
+
+    // ==================== Service Validation Tests ====================
+
+    it('should reject sort_order exceeding bounds (service validator)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step1 = await createStep(app, authToken, journey.id, 'Step 1');
+      await createStep(app, authToken, journey.id, 'Step 2'); // Create second step for bounds testing
+
+      // Try to reorder to position 5 (only 2 steps exist, max position is 1)
+      const response = await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step1.id}/reorder`)
+        .send({ new_sort_order: 5 })
+        .expect(400);
+
+      expect(response.body.message).toContain('new_sort_order must be less than');
+    });
+
+    it('should reject reordering non-existent step (404)', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${fakeId}/reorder`)
+        .send({ new_sort_order: 0 })
+        .expect(404);
+    });
+
+    // ==================== Edge Cases ====================
+
+    it('should reorder to same position (noop)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step1 = await createStep(app, authToken, journey.id, 'Step 1');
+      const step2 = await createStep(app, authToken, journey.id, 'Step 2');
+      const step3 = await createStep(app, authToken, journey.id, 'Step 3');
+
+      // Reorder step2 to its current position (1)
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step2.id}/reorder`)
+        .send({ new_sort_order: 1 })
+        .expect(201);
+
+      // Verify order unchanged: step1, step2, step3
+      const steps = await authenticatedRequest(app, authToken)
+        .get('/api/steps')
+        .expect(200)
+        .then(res => res.body.filter((s: any) => s.journey_id === journey.id));
+
+      expect(steps[0].id).toBe(step1.id);
+      expect(steps[1].id).toBe(step2.id);
+      expect(steps[2].id).toBe(step3.id);
+    });
+
+    it('should reorder to last position', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step1 = await createStep(app, authToken, journey.id, 'Step 1');
+      const step2 = await createStep(app, authToken, journey.id, 'Step 2');
+      const step3 = await createStep(app, authToken, journey.id, 'Step 3');
+
+      // Reorder step1 to last position (2)
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step1.id}/reorder`)
+        .send({ new_sort_order: 2 })
+        .expect(201);
+
+      // Verify order: step2, step3, step1
+      const steps = await authenticatedRequest(app, authToken)
+        .get('/api/steps')
+        .expect(200)
+        .then(res => res.body.filter((s: any) => s.journey_id === journey.id));
+
+      expect(steps[0].id).toBe(step2.id);
+      expect(steps[1].id).toBe(step3.id);
+      expect(steps[2].id).toBe(step1.id);
+    });
+
+    it('should reorder with single step (noop)', async () => {
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
+      const step = await createStep(app, authToken, journey.id, 'Only Step');
+
+      // Reorder the only step to position 0
+      await authenticatedRequest(app, authToken)
+        .post(`/api/steps/${step.id}/reorder`)
+        .send({ new_sort_order: 0 })
+        .expect(201);
+
+      // Verify step is still there at position 0
+      const steps = await authenticatedRequest(app, authToken)
+        .get('/api/steps')
+        .expect(200)
+        .then(res => res.body.filter((s: any) => s.journey_id === journey.id));
+
+      expect(steps).toHaveLength(1);
+      expect(steps[0].id).toBe(step.id);
+      expect(steps[0].sort_order).toBe(0);
+    });
   });
 
   describe('GET /api/steps/:id/stories', () => {
     it('should get all stories for a step across all releases', async () => {
       // Create journey and step using factories
-      const journey = await createJourney(app, authToken, 'Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Test Step');
 
       // Create 3 releases using factories
-      const release1 = await createRelease(app, authToken, 'Release 1');
-      const release2 = await createRelease(app, authToken, 'Release 2');
-      const release3 = await createRelease(app, authToken, 'Release 3');
+      const release1 = await createRelease(app, authToken, storyMap.id, 'Release 1');
+      const release2 = await createRelease(app, authToken, storyMap.id, 'Release 2');
+      const release3 = await createRelease(app, authToken, storyMap.id, 'Release 3');
 
       // Create stories in different releases for the same step using factories
       await createStory(app, authToken, step.id, release1.id, { title: 'Story R1-1' });
@@ -193,12 +386,12 @@ describe('Steps Reordering (E2E) - Tier 2', () => {
 
     it('should return stories ordered by release_id then sort_order', async () => {
       // Create journey and step using factories
-      const journey = await createJourney(app, authToken, 'Ordering Test Journey');
+      const journey = await createJourney(app, authToken, storyMap.id, 'Ordering Test Journey');
       const step = await createStep(app, authToken, journey.id, 'Ordering Test Step');
 
       // Create 2 releases using factories
-      const release1 = await createRelease(app, authToken, 'Alpha Release');
-      const release2 = await createRelease(app, authToken, 'Beta Release');
+      const release1 = await createRelease(app, authToken, storyMap.id, 'Alpha Release');
+      const release2 = await createRelease(app, authToken, storyMap.id, 'Beta Release');
 
       // Create stories in reverse order (release2 first) to test ordering using factories
       await createStory(app, authToken, step.id, release2.id, { title: 'Story R2-1' });

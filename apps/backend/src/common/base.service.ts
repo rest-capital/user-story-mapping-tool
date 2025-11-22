@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException } from '@nestjs/common';
 import { PrismaService } from '../modules/prisma/prisma.service';
 
 /**
@@ -117,6 +117,11 @@ export abstract class BaseService {
               context,
             );
         }
+      }
+
+      // Re-throw HttpException as-is (ForbiddenException, UnauthorizedException, etc.)
+      if (error instanceof HttpException) {
+        throw error;
       }
 
       // Re-throw domain errors as-is (they're already user-friendly)

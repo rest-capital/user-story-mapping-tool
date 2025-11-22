@@ -13,11 +13,21 @@ id: string ;
 name: string ;
 @ApiProperty({
   type: 'string',
+  format: 'date-time',
 })
-color: string ;
+createdAt: Date ;
 @ApiProperty({
   type: 'string',
   format: 'date-time',
 })
-createdAt: Date ;
+updatedAt: Date ;
+@ApiProperty({
+  type: 'string',
+})
+createdBy: string ;
+@ApiProperty({
+  type: 'string',
+  nullable: true,
+})
+updatedBy: string  | null;
 }

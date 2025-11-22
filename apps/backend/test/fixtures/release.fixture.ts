@@ -7,7 +7,8 @@ export const releaseFixtures = {
   /**
    * Minimal valid release
    */
-  minimal: () => ({
+  minimal: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Release'),
     description: '',
   }),
@@ -15,7 +16,8 @@ export const releaseFixtures = {
   /**
    * Release with custom name
    */
-  withName: (name: string) => ({
+  withName: (storyMapId: string, name: string) => ({
+    story_map_id: storyMapId,
     name,
     description: '',
   }),
@@ -23,7 +25,8 @@ export const releaseFixtures = {
   /**
    * Release with description
    */
-  withDescription: (description: string) => ({
+  withDescription: (storyMapId: string, description: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Release'),
     description,
   }),
@@ -31,7 +34,8 @@ export const releaseFixtures = {
   /**
    * Complete release with name and description
    */
-  complete: () => ({
+  complete: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: generateUniqueName('Release'),
     description: 'A complete release with full details',
   }),
@@ -39,7 +43,8 @@ export const releaseFixtures = {
   /**
    * Release with empty name (for validation testing)
    */
-  invalidEmpty: () => ({
+  invalidEmpty: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: '',
     description: '',
   }),
@@ -47,7 +52,8 @@ export const releaseFixtures = {
   /**
    * Unassigned release (special case)
    */
-  unassigned: () => ({
+  unassigned: (storyMapId: string) => ({
+    story_map_id: storyMapId,
     name: 'Unassigned',
     description: 'Default release for unassigned stories',
     is_unassigned: true,

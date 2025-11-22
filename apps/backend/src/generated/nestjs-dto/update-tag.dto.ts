@@ -13,4 +13,19 @@ export class UpdateTagDto {
 @IsOptional()
 @IsString()
 name?: string ;
+@ApiProperty({
+  type: 'string',
+  required: false,
+})
+@IsOptional()
+@IsString()
+createdBy?: string ;
+@ApiProperty({
+  type: 'string',
+  required: false,
+  nullable: true,
+})
+@IsOptional()
+@IsString()
+updatedBy?: string  | null;
 }
