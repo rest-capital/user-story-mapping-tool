@@ -12,6 +12,7 @@ import { TagsModule } from './modules/tags/tags.module';
 import { PersonasModule } from './modules/personas/personas.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { StoryLinksModule } from './modules/story-links/story-links.module';
+import { CollaborationModule } from './modules/collaboration/collaboration.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { StoryLinksModule } from './modules/story-links/story-links.module';
     PersonasModule,
     CommentsModule,
     StoryLinksModule,
+    CollaborationModule,
   ],
 })
 export class AppModule {}

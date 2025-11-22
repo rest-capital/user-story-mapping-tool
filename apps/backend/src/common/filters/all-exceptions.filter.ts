@@ -22,6 +22,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     'PersonaError',
     'CommentError',
     'StoryLinkError',
+    'CollaborationError',
   ];
 
   catch(exception: unknown, host: ArgumentsHost) {
