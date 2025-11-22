@@ -384,7 +384,7 @@ describe('Journeys (E2E) - Tier 1', () => {
 
       // Delete the journey
       await authenticatedRequest(app, authToken)
-        .delete(`/api/journeys/${journey.id}`)
+        .delete(`/api/journeys/${journey.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify journey is gone
@@ -397,7 +397,7 @@ describe('Journeys (E2E) - Tier 1', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await authenticatedRequest(app, authToken)
-        .delete(`/api/journeys/${fakeId}`)
+        .delete(`/api/journeys/${fakeId}?story_map_id=${storyMap.id}`)
         .expect(404);
     });
 

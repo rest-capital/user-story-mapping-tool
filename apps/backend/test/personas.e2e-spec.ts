@@ -345,7 +345,7 @@ describe('Personas (E2E) - Tier 1', () => {
 
       // Delete the persona
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/personas/${persona.id}`)
+        .delete(`/api/personas/${persona.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response structure
@@ -363,7 +363,7 @@ describe('Personas (E2E) - Tier 1', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await authenticatedRequest(app, authToken)
-        .delete(`/api/personas/${fakeId}`)
+        .delete(`/api/personas/${fakeId}?story_map_id=${storyMap.id}`)
         .expect(404);
     });
 

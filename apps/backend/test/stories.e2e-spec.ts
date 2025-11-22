@@ -542,7 +542,7 @@ describe('Stories (E2E) - Tier 1', () => {
 
       // Delete the story
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/stories/${story.id}`)
+        .delete(`/api/stories/${story.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response structure
@@ -561,7 +561,7 @@ describe('Stories (E2E) - Tier 1', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await authenticatedRequest(app, authToken)
-        .delete(`/api/stories/${fakeId}`)
+        .delete(`/api/stories/${fakeId}?story_map_id=${storyMap.id}`)
         .expect(404);
     });
 

@@ -191,7 +191,7 @@ describe('Tags (E2E) - Tier 1', () => {
 
       // Delete the tag
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/tags/${tag.id}`)
+        .delete(`/api/tags/${tag.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response structure
@@ -209,7 +209,7 @@ describe('Tags (E2E) - Tier 1', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await authenticatedRequest(app, authToken)
-        .delete(`/api/tags/${fakeId}`)
+        .delete(`/api/tags/${fakeId}?story_map_id=${storyMap.id}`)
         .expect(404);
     });
 

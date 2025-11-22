@@ -376,7 +376,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
       // Delete the release
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/releases/${release.id}`)
+        .delete(`/api/releases/${release.id}?story_map_id=${storyMap.id}`)
         .expect(200);
 
       // Verify response structure
@@ -398,7 +398,7 @@ describe('Releases (E2E) - Tier 1', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await authenticatedRequest(app, authToken)
-        .delete(`/api/releases/${fakeId}`)
+        .delete(`/api/releases/${fakeId}?story_map_id=${storyMap.id}`)
         .expect(404);
     });
 
@@ -408,7 +408,7 @@ describe('Releases (E2E) - Tier 1', () => {
 
       // Try to delete the Unassigned release
       const response = await authenticatedRequest(app, authToken)
-        .delete(`/api/releases/${unassigned.id}`)
+        .delete(`/api/releases/${unassigned.id}?story_map_id=${storyMap.id}`)
         .expect(400);
 
       // Verify error message indicates protection
