@@ -441,7 +441,7 @@ describe('Story Dependencies (E2E) - Tier 2', () => {
 
       // Delete storyB
       const deleteResponse = await authenticatedRequest(app, authToken)
-        .delete(`/api/stories/${storyB.id}`)
+        .delete(`/api/stories/${storyB.id}?story_map_id=${storyMap.id}`)
         .expect(200)
         .then(res => res.body);
 
@@ -567,15 +567,14 @@ describe('Story Dependencies (E2E) - Tier 2', () => {
       const story2 = await createStory(app, authToken, step2.id, release2.id, { title: 'Story 2' });
 
       // Try to create dependency from story1 to story2 (different workspaces)
-      const response = await authenticatedRequest(app, authToken)
+      // Returns 404 to hide existence of entity in other workspace (security)
+      await authenticatedRequest(app, authToken)
         .post(`/api/stories/${story1.id}/dependencies`)
         .send({
           target_story_id: story2.id,
           link_type: 'IS_BLOCKED_BY',
         })
-        .expect(400);
-
-      expect(response.body.message).toMatch(/cannot|different|workspace|story map/i);
+        .expect(404);
     });
 
     it('should prevent creating dependency from story in different workspace (400)', async () => {
@@ -594,15 +593,14 @@ describe('Story Dependencies (E2E) - Tier 2', () => {
       const story2 = await createStory(app, authToken, step2.id, release2.id, { title: 'Story 2' });
 
       // Try to create dependency from story2 to story1 (different workspaces)
-      const response = await authenticatedRequest(app, authToken)
+      // Returns 404 to hide existence of entity in other workspace (security)
+      await authenticatedRequest(app, authToken)
         .post(`/api/stories/${story2.id}/dependencies`)
         .send({
           target_story_id: story1.id,
           link_type: 'IS_BLOCKED_BY',
         })
-        .expect(400);
-
-      expect(response.body.message).toMatch(/cannot|different|workspace|story map/i);
+        .expect(404);
     });
   });
 

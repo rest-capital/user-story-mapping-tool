@@ -7,16 +7,17 @@ let nameCounter = 0;
 
 /**
  * Generates a unique email address for testing
- * Uses timestamp and counter to ensure uniqueness
+ * Uses worker ID, timestamp and counter to ensure uniqueness across parallel workers
  *
  * @returns string - Unique email address
  *
  * @example
  * const email = generateUniqueEmail();
- * // Returns: "test-1732047600123-0@example.com"
+ * // Returns: "test-w1-1732047600123-0@example.com" (worker 1)
  */
 export function generateUniqueEmail(): string {
-  return `test-${Date.now()}-${emailCounter++}@example.com`;
+  const workerId = process.env.JEST_WORKER_ID || '1';
+  return `test-w${workerId}-${Date.now()}-${emailCounter++}@example.com`;
 }
 
 /**

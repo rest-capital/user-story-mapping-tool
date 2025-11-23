@@ -662,13 +662,11 @@ describe('Stories Moving (E2E) - Tier 2', () => {
         });
 
         // Try to move to step from different story map
-        // EXPECTED TO FAIL: This exposes the workspace isolation bug
-        const response = await authenticatedRequest(app, authToken)
+        // Returns 404 to hide existence of entity in other workspace (security)
+        await authenticatedRequest(app, authToken)
           .post(`/api/stories/${story.id}/move`)
           .send({ step_id: step2.id })
-          .expect(400);
-
-        expect(response.body.message).toContain('different story map');
+          .expect(404);
       });
 
       it('should prevent moving story to release from different story map', async () => {
@@ -689,13 +687,11 @@ describe('Stories Moving (E2E) - Tier 2', () => {
         });
 
         // Try to move to release from different story map
-        // EXPECTED TO FAIL: This exposes the workspace isolation bug
-        const response = await authenticatedRequest(app, authToken)
+        // Returns 404 to hide existence of entity in other workspace (security)
+        await authenticatedRequest(app, authToken)
           .post(`/api/stories/${story.id}/move`)
           .send({ release_id: release2.id })
-          .expect(400);
-
-        expect(response.body.message).toContain('different story map');
+          .expect(404);
       });
     });
   });
